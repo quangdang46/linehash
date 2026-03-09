@@ -260,12 +260,6 @@ git push                # Push to remote
 4. **Sync beads** - `br sync --flush-only` to export to JSONL
 5. **Hand off** - Provide context for next session
 
-### Commit Discipline
-
-- **Always run checks before committing**: For any code change, run tests, linters, builds,,format and `ubs $(git diff --name-only --cached)` on staged files before creating a commit.
-- **Only commit when checks pass**: Do not commit if tests, linters, builds, or UBS are failing, unless you are explicitly committing a known-broken state with a clear reason in the commit message and associated issue.
-- **Treat every change as commit-ready**: Work as if any local change could be committed; keep changes small, coherent, and fully validated before `git commit`.
-
 ---
 
 Note for Codex/GPT-5.2:

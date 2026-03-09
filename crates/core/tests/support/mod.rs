@@ -61,8 +61,8 @@ pub fn do_edit(content: &str, anchor: &str, new_content: &str) -> String {
     let (stdout, stderr, code) = run_linehash(&["edit", &file_arg, anchor, new_content]);
     assert_eq!(code, 0, "expected edit success, stderr: {stderr}");
     assert!(
-        stdout.is_empty(),
-        "expected no stdout on edit, got: {stdout:?}"
+        stdout == "Edited line 2.\n" || stdout == "Edited lines 2-3.\n" || stdout.starts_with("Edited line ") || stdout.starts_with("Edited lines "),
+        "expected success message on stdout, got: {stdout:?}"
     );
     fs::read_to_string(&file).expect("read edited file")
 }

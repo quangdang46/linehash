@@ -1,6 +1,8 @@
 mod support;
 
-use support::{assert_err_contains, fixture_path, parse_json, run_linehash, tmpfile};
+use std::fs;
+
+use support::{assert_err_contains, do_edit, fixture_path, parse_json, run_linehash, tmpfile};
 
 #[test]
 fn missing_file_read_reports_io_error() {
@@ -234,8 +236,84 @@ fn annotate_invalid_regex_reports_error() {
 }
 
 #[test]
+fn edit_single_line_updates_file_contents() {
+    let edited = do_edit("alpha\nbeta\n", &anchor_for_line("alpha\nbeta\n", 2), "gamma");
+    assert_eq!(edited, "alpha\ngamma\n");
+}
+
+#[test]
+fn edit_range_replaces_lines_with_single_line() {
+    let content = "alpha\nbeta\ngamma\ndelta\n";
+    let start = anchor_for_line(content, 2);
+    let end = anchor_for_line(content, 3);
+    let edited = do_edit(content, &format!("{start}..{end}"), "merged");
+    assert_eq!(edited, "alpha\nmerged\ndelta\n");
+}
+
+#[test]
+fn edit_dry_run_reports_change_without_writing_file() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&["edit", &file_arg, &anchor, "gamma", "--dry-run"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would change line 2:"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn edit_json_dry_run_returns_proposed_document() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let parsed = parse_json(&["edit", &file_arg, &anchor, "gamma", "--dry-run", "--json"]);
+
+    assert_eq!(parsed["lines"][1]["content"], "gamma");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn edit_expect_mtime_rejects_stale_file() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_mtime = parsed["mtime"].as_i64().unwrap() - 1;
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &anchor,
+        "gamma",
+        "--expect-mtime",
+        &stale_mtime.to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
 fn helper_tmpfile_writes_expected_content() {
     let file = tmpfile("alpha\nbeta\n");
     let contents = std::fs::read_to_string(&file).unwrap();
     assert_eq!(contents, "alpha\nbeta\n");
+}
+
+fn anchor_for_line(content: &str, line_no: usize) -> String {
+    let file = tmpfile(content);
+    let file_arg = file.to_string_lossy().into_owned();
+    anchor_from_file(&file_arg, line_no)
+}
+
+fn anchor_from_file(file_arg: &str, line_no: usize) -> String {
+    let parsed = parse_json(&["read", file_arg, "--json"]);
+    format!(
+        "{}:{}",
+        line_no,
+        parsed["lines"][line_no - 1]["hash"].as_str().unwrap()
+    )
 }

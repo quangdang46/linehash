@@ -137,11 +137,10 @@ mod tests {
         assert!(stdout.is_empty());
         let stderr = String::from_utf8(stderr).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&stderr).unwrap();
-        assert_eq!(parsed["error"], "patch is not implemented yet");
-        assert_eq!(parsed["command"], "patch");
+        assert!(parsed["error"].as_str().unwrap().starts_with("I/O error:"));
         assert_eq!(
             parsed["hint"],
-            "continue with the next planned implementation bead"
+            "check the file path and permissions, then retry the command"
         );
     }
 }

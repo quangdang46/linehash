@@ -603,6 +603,240 @@ fn delete_last_remaining_line_produces_empty_file() {
 }
 
 #[test]
+fn patch_applies_edit_insert_and_delete_atomically() {
+    let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let edit_anchor = anchor_from_file(&file_arg, 2);
+    let insert_anchor = anchor_from_file(&file_arg, 2);
+    let delete_anchor = anchor_from_file(&file_arg, 4);
+    let patch_file = tmpfile(&format!(
+        "{{\n  \"file\": {:?},\n  \"ops\": [\n    {{ \"op\": \"edit\", \"anchor\": {:?}, \"content\": \"BETA\" }},\n    {{ \"op\": \"insert\", \"anchor\": {:?}, \"content\": \"between\" }},\n    {{ \"op\": \"delete\", \"anchor\": {:?} }}\n  ]\n}}\n",
+        file_arg, edit_anchor, insert_anchor, delete_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Applied 3 ops: 1 edit, 1 insert, 1 delete."));
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "alpha\nBETA\nbetween\ngamma\n"
+    );
+}
+
+#[test]
+fn patch_dry_run_does_not_modify_file() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let edit_anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"BETA\"}}]}}",
+        edit_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg, "--dry-run"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would apply applied 1 ops: 1 edit, 0 inserts, 0 deletes."));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn patch_json_dry_run_returns_proposed_document() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let edit_anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"BETA\"}}]}}",
+        edit_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["patch", &file_arg, &patch_arg, "--dry-run", "--json"]);
+
+    assert_eq!(parsed["lines"][1]["content"], "BETA");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn patch_respects_matching_guards() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let edit_anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"gamma\"}}]}}",
+        edit_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (stdout, stderr, code) = run_linehash(&[
+        "patch",
+        &file_arg,
+        &patch_arg,
+        "--expect-mtime",
+        &parsed["mtime"].as_i64().unwrap().to_string(),
+        "--expect-inode",
+        &parsed["inode"].as_u64().unwrap().to_string(),
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Applied 1 ops: 1 edit, 0 inserts, 0 deletes."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn patch_rejects_stale_guard_without_writing() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let edit_anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"gamma\"}}]}}",
+        edit_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&[
+        "patch",
+        &file_arg,
+        &patch_arg,
+        "--expect-mtime",
+        &(parsed["mtime"].as_i64().unwrap() - 1).to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn patch_rejects_bad_anchor_without_writing() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let patch_file = tmpfile("{\"ops\":[{\"op\":\"delete\",\"anchor\":\"9:ff\"}]}");
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("patch failed at operation 1"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn patch_reports_failing_operation_index() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"insert\",\"anchor\":{:?},\"content\":\"ok\"}},{{\"op\":\"delete\",\"anchor\":\"9:ff\"}}]}}",
+        anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("patch failed at operation 2"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn patch_rejects_overlapping_operations_without_writing() {
+    let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let range_start = anchor_from_file(&file_arg, 2);
+    let range_end = anchor_from_file(&file_arg, 3);
+    let delete_anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"merged\"}},{{\"op\":\"delete\",\"anchor\":{:?}}}]}}",
+        format!("{range_start}..{range_end}"),
+        delete_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("overlaps an earlier edit"));
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "alpha\nbeta\ngamma\ndelta\n"
+    );
+}
+
+#[test]
+fn patch_rejects_mismatched_embedded_file_without_writing() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"file\":\"/definitely/other.txt\",\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"gamma\"}}]}}",
+        anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("operation 0"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn patch_uses_original_snapshot_for_later_ops() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let first_anchor = anchor_from_file(&file_arg, 1);
+    let second_anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"insert\",\"anchor\":{:?},\"content\":\"before-beta\"}},{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"BETA\"}}]}}",
+        first_anchor, second_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "alpha\nbefore-beta\nBETA\ngamma\n"
+    );
+}
+
+#[test]
+fn patch_multiple_inserts_at_same_anchor_preserve_order() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"insert\",\"anchor\":{:?},\"content\":\"first\"}},{{\"op\":\"insert\",\"anchor\":{:?},\"content\":\"second\"}}]}}",
+        anchor, anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "alpha\nfirst\nsecond\nbeta\n"
+    );
+}
+
+#[test]
+fn patch_preserves_crlf_and_trailing_newline() {
+    let file = tmpfile("alpha\r\nbeta\r\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"gamma\"}}]}}",
+        anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["patch", &file_arg, &patch_arg]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\r\ngamma\r\n");
+}
+
+#[test]
 fn helper_tmpfile_writes_expected_content() {
     let file = tmpfile("alpha\nbeta\n");
     let contents = std::fs::read_to_string(&file).unwrap();

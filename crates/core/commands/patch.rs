@@ -1,12 +1,485 @@
-use std::io::Write;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::ops::RangeInclusive;
 
+use serde::Deserialize;
+
+use crate::anchor::{parse_anchor, parse_range, resolve, resolve_range};
 use crate::cli::PatchCmd;
-use crate::context::CommandContext;
+use crate::commands::common::{atomic_write, check_guard};
+use crate::context::{CommandContext, OutputMode};
+use crate::document::{Document, LineRecord};
 use crate::error::LinehashError;
+use crate::hash;
+use crate::mutation::validate_single_line_content;
+use crate::output;
 
 pub fn run<W: Write, E: Write>(
-    _ctx: &mut CommandContext<'_, W, E>,
-    _cmd: PatchCmd,
+    ctx: &mut CommandContext<'_, W, E>,
+    cmd: PatchCmd,
 ) -> Result<(), LinehashError> {
-    Err(LinehashError::NotImplemented { command: "patch" })
+    let patch = read_patch(&cmd.patch)?;
+    validate_patch_target(&patch, &cmd.file)?;
+
+    let original = Document::load(&cmd.file)?;
+    check_guard(&original, cmd.expect_mtime, cmd.expect_inode)?;
+    let index = original.build_index();
+    let plan = build_plan(&patch, &original, &index)?;
+    let result = apply_plan(&original, &plan)?;
+
+    if cmd.dry_run {
+        return write_dry_run(ctx, &result.document, &result.summary);
+    }
+
+    atomic_write(&cmd.file, &result.document.render())?;
+
+    match ctx.output_mode() {
+        OutputMode::Json => Ok(()),
+        OutputMode::Pretty => output::write_success_line(ctx, &result.summary.success_message())
+            .map_err(LinehashError::from),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PatchFile {
+    file: Option<String>,
+    ops: Vec<PatchOp>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase")]
+enum PatchOp {
+    Edit(EditOp),
+    Insert(InsertOp),
+    Delete(DeleteOp),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditOp {
+    anchor: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InsertOp {
+    anchor: String,
+    content: String,
+    before: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeleteOp {
+    anchor: String,
+}
+
+#[derive(Clone, Debug)]
+enum PlannedOp {
+    EditSingle {
+        op_index: usize,
+        line: usize,
+        content: String,
+        before: String,
+    },
+    EditRange {
+        op_index: usize,
+        range: RangeInclusive<usize>,
+        content: String,
+        before: Vec<String>,
+    },
+    Insert {
+        boundary: usize,
+        content: String,
+        before: bool,
+        anchor_line: usize,
+    },
+    Delete {
+        op_index: usize,
+        line: usize,
+        deleted: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Occupancy {
+    Edit,
+    Delete,
+}
+
+#[derive(Clone, Debug)]
+struct PatchResult {
+    document: Document,
+    summary: PatchSummary,
+}
+
+#[derive(Clone, Debug)]
+struct PatchSummary {
+    op_count: usize,
+    actions: Vec<String>,
+    edit_count: usize,
+    insert_count: usize,
+    delete_count: usize,
+}
+
+impl PatchSummary {
+    fn success_message(&self) -> String {
+        format!(
+            "Applied {} ops: {} edit{}, {} insert{}, {} delete{}.",
+            self.op_count,
+            self.edit_count,
+            plural_suffix(self.edit_count),
+            self.insert_count,
+            plural_suffix(self.insert_count),
+            self.delete_count,
+            plural_suffix(self.delete_count)
+        )
+    }
+}
+
+fn read_patch(path: &str) -> Result<PatchFile, LinehashError> {
+    let raw = if path == "-" {
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer)?;
+        buffer
+    } else {
+        fs::read_to_string(path)?
+    };
+
+    serde_json::from_str(&raw).map_err(LinehashError::from)
+}
+
+fn validate_patch_target(patch: &PatchFile, file: &std::path::Path) -> Result<(), LinehashError> {
+    if let Some(expected) = &patch.file {
+        let actual = file.display().to_string();
+        if expected != &actual {
+            return Err(LinehashError::PatchFailed {
+                op_index: 0,
+                reason: format!(
+                    "patch file target {expected:?} does not match command target {actual:?}"
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn build_plan(
+    patch: &PatchFile,
+    original: &Document,
+    index: &std::collections::HashMap<String, Vec<usize>>,
+) -> Result<Vec<PlannedOp>, LinehashError> {
+    let mut plan = Vec::with_capacity(patch.ops.len());
+    let mut occupied = vec![None; original.lines.len()];
+
+    for (raw_index, op) in patch.ops.iter().enumerate() {
+        let op_index = raw_index + 1;
+        let planned = match op {
+            PatchOp::Edit(edit) => resolve_edit(op_index, edit, original, index, &mut occupied)?,
+            PatchOp::Insert(insert) => resolve_insert(op_index, insert, original, index)?,
+            PatchOp::Delete(delete) => {
+                resolve_delete(op_index, delete, original, index, &mut occupied)?
+            }
+        };
+        plan.push(planned);
+    }
+
+    Ok(plan)
+}
+
+fn resolve_edit(
+    op_index: usize,
+    edit: &EditOp,
+    original: &Document,
+    index: &std::collections::HashMap<String, Vec<usize>>,
+    occupied: &mut [Option<Occupancy>],
+) -> Result<PlannedOp, LinehashError> {
+    validate_single_line_content(&edit.content).map_err(|error| patch_error(op_index, error))?;
+
+    if let Ok(range) = parse_range(&edit.anchor) {
+        let (start, end) =
+            resolve_range(&range, original, index).map_err(|error| patch_error(op_index, error))?;
+        mark_occupied(occupied, start.index..=end.index, Occupancy::Edit, op_index)?;
+        let before = original.lines[start.index..=end.index]
+            .iter()
+            .map(|line| line.content.clone())
+            .collect();
+        return Ok(PlannedOp::EditRange {
+            op_index,
+            range: start.index..=end.index,
+            content: edit.content.clone(),
+            before,
+        });
+    }
+
+    let anchor = parse_anchor(&edit.anchor).map_err(|error| patch_error(op_index, error))?;
+    let resolved =
+        resolve(&anchor, original, index).map_err(|error| patch_error(op_index, error))?;
+    mark_occupied(
+        occupied,
+        resolved.index..=resolved.index,
+        Occupancy::Edit,
+        op_index,
+    )?;
+    Ok(PlannedOp::EditSingle {
+        op_index,
+        line: resolved.index,
+        content: edit.content.clone(),
+        before: original.lines[resolved.index].content.clone(),
+    })
+}
+
+fn resolve_insert(
+    op_index: usize,
+    insert: &InsertOp,
+    original: &Document,
+    index: &std::collections::HashMap<String, Vec<usize>>,
+) -> Result<PlannedOp, LinehashError> {
+    validate_single_line_content(&insert.content).map_err(|error| patch_error(op_index, error))?;
+    let anchor = parse_anchor(&insert.anchor).map_err(|error| patch_error(op_index, error))?;
+    let resolved =
+        resolve(&anchor, original, index).map_err(|error| patch_error(op_index, error))?;
+    let before = insert.before.unwrap_or(false);
+    let boundary = if before {
+        resolved.index
+    } else {
+        resolved.index + 1
+    };
+
+    Ok(PlannedOp::Insert {
+        boundary,
+        content: insert.content.clone(),
+        before,
+        anchor_line: resolved.line_no,
+    })
+}
+
+fn resolve_delete(
+    op_index: usize,
+    delete: &DeleteOp,
+    original: &Document,
+    index: &std::collections::HashMap<String, Vec<usize>>,
+    occupied: &mut [Option<Occupancy>],
+) -> Result<PlannedOp, LinehashError> {
+    let anchor = parse_anchor(&delete.anchor).map_err(|error| patch_error(op_index, error))?;
+    let resolved =
+        resolve(&anchor, original, index).map_err(|error| patch_error(op_index, error))?;
+    mark_occupied(
+        occupied,
+        resolved.index..=resolved.index,
+        Occupancy::Delete,
+        op_index,
+    )?;
+    Ok(PlannedOp::Delete {
+        op_index,
+        line: resolved.index,
+        deleted: original.lines[resolved.index].content.clone(),
+    })
+}
+
+fn mark_occupied(
+    occupied: &mut [Option<Occupancy>],
+    range: RangeInclusive<usize>,
+    next: Occupancy,
+    op_index: usize,
+) -> Result<(), LinehashError> {
+    for idx in range {
+        if let Some(existing) = occupied[idx] {
+            let reason = match existing {
+                Occupancy::Edit => format!(
+                    "operation overlaps an earlier edit at original line {}",
+                    idx + 1
+                ),
+                Occupancy::Delete => format!(
+                    "operation overlaps an earlier delete at original line {}",
+                    idx + 1
+                ),
+            };
+            return Err(LinehashError::PatchFailed { op_index, reason });
+        }
+        occupied[idx] = Some(next);
+    }
+    Ok(())
+}
+
+fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, LinehashError> {
+    let mut inserts_before: Vec<Vec<String>> = vec![Vec::new(); original.lines.len() + 1];
+    let mut replacement_at: Vec<Option<String>> = vec![None; original.lines.len()];
+    let mut skip_until: Vec<bool> = vec![false; original.lines.len()];
+    let mut deleted = vec![false; original.lines.len()];
+    let mut summary = PatchSummary {
+        op_count: plan.len(),
+        actions: Vec::with_capacity(plan.len()),
+        edit_count: 0,
+        insert_count: 0,
+        delete_count: 0,
+    };
+
+    for op in plan {
+        match op {
+            PlannedOp::EditSingle {
+                op_index,
+                line,
+                content,
+                before,
+            } => {
+                let slot =
+                    replacement_at
+                        .get_mut(*line)
+                        .ok_or_else(|| LinehashError::PatchFailed {
+                            op_index: *op_index,
+                            reason: format!("resolved line {} is out of bounds", line + 1),
+                        })?;
+                *slot = Some(content.clone());
+                summary.edit_count += 1;
+                summary.actions.push(format!(
+                    "edit line {}: {:?} -> {:?}",
+                    line + 1,
+                    before,
+                    content
+                ));
+            }
+            PlannedOp::EditRange {
+                op_index,
+                range,
+                content,
+                before,
+            } => {
+                let start = *range.start();
+                let end = *range.end();
+                let slot =
+                    replacement_at
+                        .get_mut(start)
+                        .ok_or_else(|| LinehashError::PatchFailed {
+                            op_index: *op_index,
+                            reason: format!("resolved start line {} is out of bounds", start + 1),
+                        })?;
+                *slot = Some(content.clone());
+                for idx in start + 1..=end {
+                    let skip =
+                        skip_until
+                            .get_mut(idx)
+                            .ok_or_else(|| LinehashError::PatchFailed {
+                                op_index: *op_index,
+                                reason: format!("resolved line {} is out of bounds", idx + 1),
+                            })?;
+                    *skip = true;
+                }
+                summary.edit_count += 1;
+                summary.actions.push(format!(
+                    "edit lines {}-{}: {} line{} replaced",
+                    start + 1,
+                    end + 1,
+                    before.len(),
+                    plural_suffix(before.len())
+                ));
+            }
+            PlannedOp::Insert {
+                boundary,
+                content,
+                before,
+                anchor_line,
+                ..
+            } => {
+                inserts_before[*boundary].push(content.clone());
+                summary.insert_count += 1;
+                let relation = if *before { "before" } else { "after" };
+                summary.actions.push(format!(
+                    "insert {:?} {relation} line {}",
+                    content, anchor_line
+                ));
+            }
+            PlannedOp::Delete {
+                op_index,
+                line,
+                deleted: content,
+            } => {
+                let slot = deleted
+                    .get_mut(*line)
+                    .ok_or_else(|| LinehashError::PatchFailed {
+                        op_index: *op_index,
+                        reason: format!("resolved line {} is out of bounds", line + 1),
+                    })?;
+                *slot = true;
+                summary.delete_count += 1;
+                summary
+                    .actions
+                    .push(format!("delete line {}: {:?}", line + 1, content));
+            }
+        }
+    }
+
+    let mut new_contents = Vec::new();
+    for boundary in 0..=original.lines.len() {
+        new_contents.extend(inserts_before[boundary].iter().cloned());
+        if boundary == original.lines.len() {
+            continue;
+        }
+        if skip_until[boundary] || deleted[boundary] {
+            continue;
+        }
+        if let Some(replacement) = &replacement_at[boundary] {
+            new_contents.push(replacement.clone());
+        } else {
+            new_contents.push(original.lines[boundary].content.clone());
+        }
+    }
+
+    let mut document = original.clone();
+    document.lines = build_lines(&new_contents);
+    if document.lines.is_empty() {
+        document.trailing_newline = false;
+    }
+
+    Ok(PatchResult { document, summary })
+}
+
+fn build_lines(contents: &[String]) -> Vec<LineRecord> {
+    contents
+        .iter()
+        .enumerate()
+        .map(|(index, content)| {
+            let full_hash = hash::full_hash(content);
+            LineRecord {
+                number: index + 1,
+                content: content.clone(),
+                full_hash,
+                short_hash: hash::short_from_full(full_hash),
+            }
+        })
+        .collect()
+}
+
+fn write_dry_run<W: Write, E: Write>(
+    ctx: &mut CommandContext<'_, W, E>,
+    doc: &Document,
+    summary: &PatchSummary,
+) -> Result<(), LinehashError> {
+    match ctx.output_mode() {
+        OutputMode::Json => output::print_read_json(ctx.stdout(), doc).map_err(LinehashError::from),
+        OutputMode::Pretty => {
+            output::write_success_line(
+                ctx,
+                &format!("Would apply {}.", summary.success_message().to_lowercase()),
+            )?;
+            for action in &summary.actions {
+                output::write_success_line(ctx, &format!("  - {action}"))?;
+            }
+            output::write_success_line(ctx, "No file was written.").map_err(LinehashError::from)
+        }
+    }
+}
+
+fn patch_error(op_index: usize, error: LinehashError) -> LinehashError {
+    LinehashError::PatchFailed {
+        op_index,
+        reason: error.to_string(),
+    }
+}
+
+fn plural_suffix(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
 }

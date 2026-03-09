@@ -1,3 +1,4 @@
+mod anchor;
 mod cli;
 mod commands;
 mod context;

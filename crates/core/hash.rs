@@ -1,0 +1,121 @@
+#![allow(dead_code)]
+
+use xxhash_rust::xxh32::xxh32;
+
+pub fn full_hash(line: &str) -> u32 {
+    xxh32(line.as_bytes(), 0)
+}
+
+pub fn short_hash(line: &str) -> String {
+    short_from_full(full_hash(line))
+}
+
+pub fn short_from_full(full: u32) -> String {
+    format!("{:02x}", full & 0xff)
+}
+
+pub fn collides(a: &str, b: &str) -> bool {
+    short_hash(a) == short_hash(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{collides, full_hash, short_from_full, short_hash};
+    use std::collections::HashMap;
+    use xxhash_rust::xxh32::xxh32;
+
+    #[test]
+    fn test_empty_line_stable() {
+        assert_eq!(short_hash(""), short_hash(""));
+    }
+
+    #[test]
+    fn test_whitespace_only_stable() {
+        assert_eq!(short_hash("  "), short_hash("  "));
+        assert_eq!(short_hash("\t"), short_hash("\t"));
+    }
+
+    #[test]
+    fn test_leading_space_differs_from_no_space() {
+        assert_ne!(short_hash("  return decoded"), short_hash("return decoded"));
+    }
+
+    #[test]
+    fn test_trailing_space_differs_from_no_space() {
+        assert_ne!(short_hash("return decoded "), short_hash("return decoded"));
+    }
+
+    #[test]
+    fn test_short_hash_always_2_chars() {
+        assert_eq!(short_hash("demo").len(), 2);
+    }
+
+    #[test]
+    fn test_short_hash_always_lowercase_hex() {
+        let hash = short_hash("demo");
+        assert!(
+            hash.chars()
+                .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
+        );
+    }
+
+    #[test]
+    fn test_deterministic_across_calls() {
+        let first = short_hash("same line");
+        let second = short_hash("same line");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_crlf_content_stripped_before_hashing() {
+        assert_ne!(short_hash("line"), short_hash("line\r\n"));
+    }
+
+    #[test]
+    fn test_collides_returns_true_on_collision() {
+        let (left, right) = find_collision_pair();
+        assert!(collides(&left, &right));
+    }
+
+    #[test]
+    fn test_collides_returns_false_on_distinct() {
+        let (left, right) = find_distinct_pair();
+        assert!(!collides(&left, &right));
+    }
+
+    #[test]
+    fn test_full_hash_seed_zero() {
+        assert_eq!(full_hash("abc"), xxh32(b"abc", 0));
+    }
+
+    #[test]
+    fn test_short_from_full_matches_short_hash() {
+        let line = "alpha beta gamma";
+        assert_eq!(short_from_full(full_hash(line)), short_hash(line));
+    }
+
+    fn find_collision_pair() -> (String, String) {
+        let mut seen: HashMap<String, String> = HashMap::new();
+        for i in 0..10_000 {
+            let candidate = format!("line-{i}");
+            let hash = short_hash(&candidate);
+            if let Some(existing) = seen.insert(hash, candidate.clone()) {
+                if existing != candidate {
+                    return (existing, candidate);
+                }
+            }
+        }
+        panic!("failed to find a short-hash collision in search space");
+    }
+
+    fn find_distinct_pair() -> (String, String) {
+        for i in 0..1_000 {
+            let left = format!("left-{i}");
+            let right = format!("right-{i}");
+            if short_hash(&left) != short_hash(&right) {
+                return (left, right);
+            }
+        }
+        panic!("failed to find distinct short hashes in search space");
+    }
+}

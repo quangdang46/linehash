@@ -1,7 +1,9 @@
 mod cli;
 mod commands;
 mod context;
+mod document;
 mod error;
+mod hash;
 mod output;
 
 use std::io;

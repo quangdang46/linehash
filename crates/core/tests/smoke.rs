@@ -47,7 +47,8 @@ fn read_anchor_context_only_shows_neighborhood() {
     let fixture_arg = fixture.to_string_lossy().into_owned();
     let full = parse_json(&["read", &fixture_arg, "--json"]);
     let anchor = format!("7:{}", full["lines"][6]["hash"].as_str().unwrap());
-    let (stdout, stderr, code) = run_linehash(&["read", &fixture_arg, "--anchor", &anchor, "--context", "1"]);
+    let (stdout, stderr, code) =
+        run_linehash(&["read", &fixture_arg, "--anchor", &anchor, "--context", "1"]);
 
     assert_eq!(code, 0, "expected success, got stderr: {stderr}");
     assert!(stderr.is_empty());
@@ -84,7 +85,10 @@ fn index_json_output_is_stable() {
 
 #[test]
 fn invalid_anchor_still_errors_for_read_context() {
-    assert_err_contains(&["read", "/definitely/missing/file.txt", "--anchor", "bogus"], "I/O error:");
+    assert_err_contains(
+        &["read", "/definitely/missing/file.txt", "--anchor", "bogus"],
+        "I/O error:",
+    );
 }
 
 #[test]
@@ -176,7 +180,13 @@ fn grep_invert_returns_non_matching_lines() {
 
     assert!(parsed.is_array());
     assert!(parsed.as_array().unwrap().len() < 9);
-    assert!(parsed.as_array().unwrap().iter().all(|line| line["content"] != "function greet(name) {"));
+    assert!(
+        parsed
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|line| line["content"] != "function greet(name) {")
+    );
 }
 
 #[test]
@@ -221,7 +231,8 @@ fn annotate_expect_one_with_multiple_matches_reports_candidates() {
 fn annotate_no_match_reports_helpful_message() {
     let fixture = fixture_path("simple_lf.js");
     let fixture_arg = fixture.to_string_lossy().into_owned();
-    let (stdout, stderr, code) = run_linehash(&["annotate", &fixture_arg, "definitely-not-present"]);
+    let (stdout, stderr, code) =
+        run_linehash(&["annotate", &fixture_arg, "definitely-not-present"]);
 
     assert_eq!(code, 0, "expected success, got stderr: {stderr}");
     assert!(stderr.is_empty());
@@ -232,12 +243,19 @@ fn annotate_no_match_reports_helpful_message() {
 fn annotate_invalid_regex_reports_error() {
     let fixture = fixture_path("simple_lf.js");
     let fixture_arg = fixture.to_string_lossy().into_owned();
-    assert_err_contains(&["annotate", &fixture_arg, "(", "--regex"], "invalid pattern '('");
+    assert_err_contains(
+        &["annotate", &fixture_arg, "(", "--regex"],
+        "invalid pattern '('",
+    );
 }
 
 #[test]
 fn edit_single_line_updates_file_contents() {
-    let edited = do_edit("alpha\nbeta\n", &anchor_for_line("alpha\nbeta\n", 2), "gamma");
+    let edited = do_edit(
+        "alpha\nbeta\n",
+        &anchor_for_line("alpha\nbeta\n", 2),
+        "gamma",
+    );
     assert_eq!(edited, "alpha\ngamma\n");
 }
 
@@ -294,6 +312,164 @@ fn edit_expect_mtime_rejects_stale_file() {
     assert_eq!(code, 1);
     assert!(stderr.contains("changed since the last read"));
     assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn insert_after_anchor_updates_file_contents() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (stdout, stderr, code) = run_linehash(&["insert", &file_arg, &anchor, "beta"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(stdout, "Inserted line 2.\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn insert_before_anchor_updates_file_contents() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&["insert", &file_arg, &anchor, "beta", "--before"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(stdout, "Inserted line 2.\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn insert_dry_run_reports_change_without_writing_file() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (stdout, stderr, code) = run_linehash(&["insert", &file_arg, &anchor, "beta", "--dry-run"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would insert line 2 after line 1:"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn insert_json_dry_run_returns_proposed_document() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let parsed = parse_json(&["insert", &file_arg, &anchor, "beta", "--dry-run", "--json"]);
+
+    assert_eq!(parsed["lines"][1]["content"], "beta");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn insert_expect_mtime_rejects_stale_file() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_mtime = parsed["mtime"].as_i64().unwrap() - 1;
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "insert",
+        &file_arg,
+        &anchor,
+        "beta",
+        "--expect-mtime",
+        &stale_mtime.to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn insert_preserves_crlf_and_trailing_newline() {
+    let file = tmpfile("alpha\r\ngamma\r\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (_stdout, stderr, code) = run_linehash(&["insert", &file_arg, &anchor, "beta"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "alpha\r\nbeta\r\ngamma\r\n"
+    );
+}
+
+#[test]
+fn delete_removes_resolved_line() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&["delete", &file_arg, &anchor]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(stdout, "Deleted line 2.\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn delete_dry_run_reports_change_without_writing_file() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&["delete", &file_arg, &anchor, "--dry-run"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would delete line 2:"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn delete_json_dry_run_returns_proposed_document() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let parsed = parse_json(&["delete", &file_arg, &anchor, "--dry-run", "--json"]);
+
+    assert_eq!(parsed["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(parsed["lines"][1]["content"], "gamma");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn delete_expect_mtime_rejects_stale_file() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_mtime = parsed["mtime"].as_i64().unwrap() - 1;
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "delete",
+        &file_arg,
+        &anchor,
+        "--expect-mtime",
+        &stale_mtime.to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn delete_last_remaining_line_produces_empty_file() {
+    let file = tmpfile("alpha");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (_stdout, stderr, code) = run_linehash(&["delete", &file_arg, &anchor]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(fs::read_to_string(&file).unwrap(), "");
 }
 
 #[test]

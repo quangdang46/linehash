@@ -90,6 +90,8 @@ pub struct InsertCmd {
     pub expect_mtime: Option<i64>,
     #[arg(long)]
     pub expect_inode: Option<u64>,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Parser)]
@@ -106,6 +108,8 @@ pub struct DeleteCmd {
     pub expect_mtime: Option<i64>,
     #[arg(long)]
     pub expect_inode: Option<u64>,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Parser)]

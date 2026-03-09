@@ -1,9 +1,8 @@
 use std::io::Write;
 
-use tempfile::NamedTempFile;
-
 use crate::anchor::{parse_anchor, parse_range, resolve, resolve_range};
 use crate::cli::EditCmd;
+use crate::commands::common::{atomic_write, check_guard};
 use crate::context::{CommandContext, OutputMode};
 use crate::document::Document;
 use crate::error::LinehashError;
@@ -54,38 +53,10 @@ pub fn run<W: Write, E: Write>(
 
     match ctx.output_mode() {
         OutputMode::Json => Ok(()),
-        OutputMode::Pretty => output::write_success_line(ctx, &summary.success_message()).map_err(LinehashError::from),
+        OutputMode::Pretty => {
+            output::write_success_line(ctx, &summary.success_message()).map_err(LinehashError::from)
+        }
     }
-}
-
-fn check_guard(
-    doc: &Document,
-    expect_mtime: Option<i64>,
-    expect_inode: Option<u64>,
-) -> Result<(), LinehashError> {
-    let Some(meta) = &doc.file_meta else {
-        return Ok(());
-    };
-
-    if expect_mtime.is_some_and(|expected| expected != meta.mtime_secs)
-        || expect_inode.is_some_and(|expected| expected != meta.inode)
-    {
-        return Err(LinehashError::StaleFile {
-            path: doc.path.display().to_string(),
-        });
-    }
-
-    Ok(())
-}
-
-fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), LinehashError> {
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let mut temp = NamedTempFile::new_in(parent)?;
-    temp.write_all(bytes)?;
-    temp.flush()?;
-    temp.persist(path)
-        .map(|_| ())
-        .map_err(|error| LinehashError::Io(error.error))
 }
 
 fn write_dry_run<W: Write, E: Write>(

@@ -98,7 +98,9 @@ mod tests {
         assert!(stdout.is_empty());
         let stderr = String::from_utf8(stderr).unwrap();
         assert!(stderr.contains("Error: I/O error:"));
-        assert!(!stderr.contains("Hint:"));
+        assert!(
+            stderr.contains("Hint: check the file path and permissions, then retry the command")
+        );
     }
 
     #[test]

@@ -14,12 +14,12 @@ pub fn run<W: Write, E: Write>(
 ) -> Result<i32, LinehashError> {
     let doc = Document::load(&cmd.file)?;
     let matched = if cmd.regex {
-        let regex = RegexBuilder::new(&cmd.query)
-            .build()
-            .map_err(|error| LinehashError::InvalidPattern {
+        let regex = RegexBuilder::new(&cmd.query).build().map_err(|error| {
+            LinehashError::InvalidPattern {
                 pattern: cmd.query.clone(),
                 message: error.to_string(),
-            })?;
+            }
+        })?;
 
         doc.lines
             .iter()

@@ -107,12 +107,20 @@ impl LinehashError {
                 Some("fix the failing patch operation and retry the transaction")
             }
             LinehashError::MultiLineContentUnsupported => {
-                Some("provide a single logical line without newline characters")
+                Some("use `linehash patch` with multiple ops for multi-line replacement")
             }
-            LinehashError::MutationIndexOutOfBounds { .. }
-            | LinehashError::InvalidMutationRange { .. }
-            | LinehashError::Io(_)
-            | LinehashError::Json(_) => None,
+            LinehashError::MutationIndexOutOfBounds { .. } => {
+                Some("re-check the resolved line number against the current document and retry")
+            }
+            LinehashError::InvalidMutationRange { .. } => {
+                Some("use a valid in-bounds range where the start line is not after the end line")
+            }
+            LinehashError::Io(_) => {
+                Some("check the file path and permissions, then retry the command")
+            }
+            LinehashError::Json(_) => {
+                Some("fix the JSON input or output handling and retry the command")
+            }
         }
     }
 
@@ -136,5 +144,82 @@ impl LinehashError {
             | LinehashError::MutationIndexOutOfBounds { .. }
             | LinehashError::InvalidMutationRange { .. } => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LinehashError;
+
+    #[test]
+    fn every_error_variant_has_a_recovery_hint() {
+        let errors = vec![
+            LinehashError::NotImplemented { command: "patch" },
+            LinehashError::Io(std::io::Error::other("boom")),
+            LinehashError::Json(serde_json::from_str::<serde_json::Value>("{").unwrap_err()),
+            LinehashError::InvalidUtf8 {
+                path: "demo.txt".into(),
+            },
+            LinehashError::BinaryFile {
+                path: "demo.bin".into(),
+            },
+            LinehashError::MixedNewlines {
+                path: "demo.txt".into(),
+            },
+            LinehashError::InvalidAnchor {
+                anchor: "bogus".into(),
+            },
+            LinehashError::InvalidRange {
+                range: "1:aa..0:bb".into(),
+            },
+            LinehashError::HashNotFound {
+                hash: "ff".into(),
+                path: "demo.txt".into(),
+            },
+            LinehashError::AmbiguousHash {
+                hash: "aa".into(),
+                count: 2,
+                lines: "1, 3".into(),
+                path: "demo.txt".into(),
+            },
+            LinehashError::StaleAnchor {
+                anchor: "2:aa".into(),
+                line: 2,
+                expected: "aa".into(),
+                actual: "bb".into(),
+                path: "demo.txt".into(),
+            },
+            LinehashError::StaleFile {
+                path: "demo.txt".into(),
+            },
+            LinehashError::InvalidPattern {
+                pattern: "(".into(),
+                message: "unclosed group".into(),
+            },
+            LinehashError::PatchFailed {
+                op_index: 1,
+                reason: "bad op".into(),
+            },
+            LinehashError::MultiLineContentUnsupported,
+            LinehashError::MutationIndexOutOfBounds { index: 5, len: 2 },
+            LinehashError::InvalidMutationRange {
+                start: 3,
+                end: 1,
+                len: 2,
+            },
+        ];
+
+        for error in errors {
+            assert!(
+                error.hint().is_some(),
+                "expected a recovery hint for error variant: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn not_implemented_reports_command_name() {
+        let error = LinehashError::NotImplemented { command: "patch" };
+        assert_eq!(error.command(), Some("patch"));
     }
 }

@@ -44,15 +44,15 @@ pub fn output_mode_for(command: &Commands) -> OutputMode {
         Commands::Verify(cmd) => flag_mode(cmd.json),
         Commands::Grep(cmd) => flag_mode(cmd.json),
         Commands::Annotate(cmd) => flag_mode(cmd.json),
+        Commands::Insert(cmd) => flag_mode(cmd.json),
+        Commands::Delete(cmd) => flag_mode(cmd.json),
         Commands::Patch(cmd) => flag_mode(cmd.json),
         Commands::FindBlock(cmd) => flag_mode(cmd.json),
         Commands::Stats(cmd) => flag_mode(cmd.json),
         Commands::FromDiff(cmd) => flag_mode(cmd.json),
         Commands::MergePatches(cmd) => flag_mode(cmd.json),
         Commands::Watch(cmd) => flag_mode(cmd.json),
-        Commands::Insert(_)
-        | Commands::Delete(_)
-        | Commands::Swap(_)
+        Commands::Swap(_)
         | Commands::Move(_)
         | Commands::Indent(_)
         | Commands::Explode(_)
@@ -71,7 +71,7 @@ fn flag_mode(json: bool) -> OutputMode {
 #[cfg(test)]
 mod tests {
     use super::{OutputMode, output_mode_for};
-    use crate::cli::{Commands, EditCmd, ExplodeCmd, ReadCmd, WatchCmd};
+    use crate::cli::{Commands, DeleteCmd, EditCmd, ExplodeCmd, InsertCmd, ReadCmd, WatchCmd};
     use std::path::PathBuf;
 
     #[test]
@@ -120,6 +120,40 @@ mod tests {
             file: PathBuf::from("demo.txt"),
             once: false,
             continuous: true,
+            json: true,
+        });
+
+        assert_eq!(output_mode_for(&command), OutputMode::Json);
+    }
+
+    #[test]
+    fn supports_json_mode_for_insert() {
+        let command = Commands::Insert(InsertCmd {
+            file: PathBuf::from("demo.txt"),
+            anchor: "1:aa".into(),
+            content: "new".into(),
+            before: false,
+            dry_run: true,
+            receipt: false,
+            audit_log: None,
+            expect_mtime: None,
+            expect_inode: None,
+            json: true,
+        });
+
+        assert_eq!(output_mode_for(&command), OutputMode::Json);
+    }
+
+    #[test]
+    fn supports_json_mode_for_delete() {
+        let command = Commands::Delete(DeleteCmd {
+            file: PathBuf::from("demo.txt"),
+            anchor: "1:aa".into(),
+            dry_run: true,
+            receipt: false,
+            audit_log: None,
+            expect_mtime: None,
+            expect_inode: None,
             json: true,
         });
 

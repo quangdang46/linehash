@@ -12,11 +12,7 @@ pub fn validate_single_line_content(content: &str) -> Result<(), LinehashError> 
     }
 }
 
-pub fn replace_line(
-    doc: &mut Document,
-    index: usize,
-    content: &str,
-) -> Result<(), LinehashError> {
+pub fn replace_line(doc: &mut Document, index: usize, content: &str) -> Result<(), LinehashError> {
     validate_single_line_content(content)?;
     ensure_index(doc, index)?;
 
@@ -39,11 +35,7 @@ pub fn replace_range_with_line(
     Ok(())
 }
 
-pub fn insert_line(
-    doc: &mut Document,
-    index: usize,
-    content: &str,
-) -> Result<(), LinehashError> {
+pub fn insert_line(doc: &mut Document, index: usize, content: &str) -> Result<(), LinehashError> {
     validate_single_line_content(content)?;
     ensure_insert_index(doc, index)?;
 
@@ -139,8 +131,8 @@ mod tests {
 
     #[test]
     fn replace_range_collapses_to_single_line() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n")
-            .unwrap();
+        let mut doc =
+            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
 
         replace_range_with_line(&mut doc, 1, 2, "merged").unwrap();
 

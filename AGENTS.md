@@ -260,6 +260,12 @@ git push                # Push to remote
 4. **Sync beads** - `br sync --flush-only` to export to JSONL
 5. **Hand off** - Provide context for next session
 
+### Commit Discipline
+
+- **Always run checks before committing**: For any code change, run tests, linters, builds,,format and `ubs $(git diff --name-only --cached)` on staged files before creating a commit.
+- **Only commit when checks pass**: Do not commit if tests, linters, builds, or UBS are failing, unless you are explicitly committing a known-broken state with a clear reason in the commit message and associated issue.
+- **Treat every change as commit-ready**: Work as if any local change could be committed; keep changes small, coherent, and fully validated before `git commit`.
+
 ---
 
 Note for Codex/GPT-5.2:
@@ -402,6 +408,8 @@ Next steps (pick one)
 NEVER EVER DO THAT AGAIN. The answer is literally ALWAYS the same: those are changes created by the potentially dozen of other agents working on the project at the same time. This is not only a common occurrence, it happens multiple times PER MINUTE. The way to deal with it is simple: you NEVER, under ANY CIRCUMSTANCE, stash, revert, overwrite, or otherwise disturb in ANY way the work of other agents. Just treat those changes identically to changes that you yourself made. Just fool yourself into thinking YOU made the changes and simply don't recall it for some reason.
 
 ---
+
+
 
 ## Note on Built-in TODO Functionality
 

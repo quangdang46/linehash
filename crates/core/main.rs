@@ -5,6 +5,7 @@ mod context;
 mod document;
 mod error;
 mod hash;
+mod mutation;
 mod output;
 
 use std::io;

@@ -58,6 +58,19 @@ pub enum LinehashError {
 
     #[error("patch failed at operation {op_index}: {reason}")]
     PatchFailed { op_index: usize, reason: String },
+
+    #[error("multi-line content is not supported in v1")]
+    MultiLineContentUnsupported,
+
+    #[error("mutation index {index} is out of bounds for document with {len} lines")]
+    MutationIndexOutOfBounds { index: usize, len: usize },
+
+    #[error("mutation range {start}..={end} is invalid for document with {len} lines")]
+    InvalidMutationRange {
+        start: usize,
+        end: usize,
+        len: usize,
+    },
 }
 
 impl LinehashError {
@@ -93,7 +106,13 @@ impl LinehashError {
             LinehashError::PatchFailed { .. } => {
                 Some("fix the failing patch operation and retry the transaction")
             }
-            LinehashError::Io(_) | LinehashError::Json(_) => None,
+            LinehashError::MultiLineContentUnsupported => {
+                Some("provide a single logical line without newline characters")
+            }
+            LinehashError::MutationIndexOutOfBounds { .. }
+            | LinehashError::InvalidMutationRange { .. }
+            | LinehashError::Io(_)
+            | LinehashError::Json(_) => None,
         }
     }
 
@@ -112,7 +131,10 @@ impl LinehashError {
             | LinehashError::StaleAnchor { .. }
             | LinehashError::StaleFile { .. }
             | LinehashError::InvalidPattern { .. }
-            | LinehashError::PatchFailed { .. } => None,
+            | LinehashError::PatchFailed { .. }
+            | LinehashError::MultiLineContentUnsupported
+            | LinehashError::MutationIndexOutOfBounds { .. }
+            | LinehashError::InvalidMutationRange { .. } => None,
         }
     }
 }

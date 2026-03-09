@@ -3,6 +3,8 @@ mod support;
 use std::fs;
 
 use support::{assert_err_contains, do_edit, fixture_path, parse_json, run_linehash, tmpfile};
+#[cfg(unix)]
+use support::{chmod, mode};
 
 #[test]
 fn missing_file_read_reports_io_error() {
@@ -600,6 +602,38 @@ fn delete_last_remaining_line_produces_empty_file() {
     assert_eq!(code, 0, "expected success, got stderr: {stderr}");
     assert!(stderr.is_empty());
     assert_eq!(fs::read_to_string(&file).unwrap(), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn edit_preserves_existing_file_permissions() {
+    let file = tmpfile("alpha\nbeta\n");
+    chmod(&file, 0o640);
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+
+    let (_stdout, stderr, code) = run_linehash(&["edit", &file_arg, &anchor, "gamma"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+    assert_eq!(mode(&file), 0o640);
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_to_empty_file_preserves_existing_permissions() {
+    let file = tmpfile("alpha");
+    chmod(&file, 0o600);
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+
+    let (_stdout, stderr, code) = run_linehash(&["delete", &file_arg, &anchor]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(fs::read_to_string(&file).unwrap(), "");
+    assert_eq!(mode(&file), 0o600);
 }
 
 #[test]

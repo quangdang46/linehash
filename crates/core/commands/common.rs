@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::Write;
 use std::path::Path;
 
@@ -28,10 +29,31 @@ pub fn check_guard(
 
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), LinehashError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let existing_permissions = fs::metadata(path).ok().map(|meta| meta.permissions());
+
     let mut temp = NamedTempFile::new_in(parent)?;
+    if let Some(permissions) = existing_permissions {
+        temp.as_file().set_permissions(permissions)?;
+    }
+
     temp.write_all(bytes)?;
     temp.flush()?;
+    temp.as_file().sync_all()?;
+
     temp.persist(path)
-        .map(|_| ())
-        .map_err(|error| LinehashError::Io(error.error))
+        .map_err(|error| LinehashError::Io(error.error))?;
+
+    sync_parent_directory(parent)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &Path) -> Result<(), LinehashError> {
+    fs::File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &Path) -> Result<(), LinehashError> {
+    Ok(())
 }

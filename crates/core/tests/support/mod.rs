@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
@@ -17,6 +19,21 @@ pub fn tmpfile(content: &str) -> TempPath {
     let file = NamedTempFile::new().expect("create temp file");
     fs::write(file.path(), content).expect("write temp file contents");
     file.into_temp_path()
+}
+
+#[cfg(unix)]
+pub fn chmod(path: &Path, mode: u32) {
+    let permissions = fs::Permissions::from_mode(mode);
+    fs::set_permissions(path, permissions).expect("set permissions");
+}
+
+#[cfg(unix)]
+pub fn mode(path: &Path) -> u32 {
+    fs::metadata(path)
+        .expect("read metadata")
+        .permissions()
+        .mode()
+        & 0o777
 }
 
 pub fn run_linehash(args: &[&str]) -> (String, String, i32) {

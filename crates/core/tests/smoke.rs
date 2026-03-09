@@ -315,6 +315,50 @@ fn edit_expect_mtime_rejects_stale_file() {
 }
 
 #[test]
+fn edit_expect_inode_rejects_stale_file() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_inode = parsed["inode"].as_u64().unwrap() + 1;
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &anchor,
+        "gamma",
+        "--expect-inode",
+        &stale_inode.to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+}
+
+#[test]
+fn edit_accepts_matching_mtime_and_inode_guards() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &anchor,
+        "gamma",
+        "--expect-mtime",
+        &parsed["mtime"].as_i64().unwrap().to_string(),
+        "--expect-inode",
+        &parsed["inode"].as_u64().unwrap().to_string(),
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Edited line 2."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
 fn insert_after_anchor_updates_file_contents() {
     let file = tmpfile("alpha\ngamma\n");
     let file_arg = file.to_string_lossy().into_owned();
@@ -384,6 +428,50 @@ fn insert_expect_mtime_rejects_stale_file() {
     assert_eq!(code, 1);
     assert!(stderr.contains("changed since the last read"));
     assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn insert_expect_inode_rejects_stale_file() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_inode = parsed["inode"].as_u64().unwrap() + 1;
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "insert",
+        &file_arg,
+        &anchor,
+        "beta",
+        "--expect-inode",
+        &stale_inode.to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn insert_accepts_matching_mtime_and_inode_guards() {
+    let file = tmpfile("alpha\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let anchor = anchor_from_file(&file_arg, 1);
+    let (stdout, stderr, code) = run_linehash(&[
+        "insert",
+        &file_arg,
+        &anchor,
+        "beta",
+        "--expect-mtime",
+        &parsed["mtime"].as_i64().unwrap().to_string(),
+        "--expect-inode",
+        &parsed["inode"].as_u64().unwrap().to_string(),
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Inserted line 2."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
 }
 
 #[test]
@@ -458,6 +546,48 @@ fn delete_expect_mtime_rejects_stale_file() {
     assert_eq!(code, 1);
     assert!(stderr.contains("changed since the last read"));
     assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn delete_expect_inode_rejects_stale_file() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_inode = parsed["inode"].as_u64().unwrap() + 1;
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "delete",
+        &file_arg,
+        &anchor,
+        "--expect-inode",
+        &stale_inode.to_string(),
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("changed since the last read"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
+}
+
+#[test]
+fn delete_accepts_matching_mtime_and_inode_guards() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&[
+        "delete",
+        &file_arg,
+        &anchor,
+        "--expect-mtime",
+        &parsed["mtime"].as_i64().unwrap().to_string(),
+        "--expect-inode",
+        &parsed["inode"].as_u64().unwrap().to_string(),
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Deleted line 2."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
 }
 
 #[test]

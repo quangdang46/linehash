@@ -23,7 +23,7 @@ fn main() {
     let mut stderr = io::stderr();
 
     let exit_code = match run(cli, &mut stdout, &mut stderr) {
-        Ok(()) => 0,
+        Ok(code) => code,
         Err(error) => {
             let mut context = CommandContext::new(&mut stdout, &mut stderr, output_mode);
             let _ = output::write_error(&mut context, &error);
@@ -34,30 +34,30 @@ fn main() {
     std::process::exit(exit_code);
 }
 
-fn run<W: Write, E: Write>(cli: Cli, stdout: &mut W, stderr: &mut E) -> Result<(), LinehashError> {
+fn run<W: Write, E: Write>(cli: Cli, stdout: &mut W, stderr: &mut E) -> Result<i32, LinehashError> {
     let output_mode = output_mode_for(&cli.command);
     let mut context = CommandContext::new(stdout, stderr, output_mode);
 
     match cli.command {
-        Commands::Read(cmd) => commands::read::run(&mut context, cmd),
-        Commands::Index(cmd) => commands::index::run(&mut context, cmd),
-        Commands::Edit(cmd) => commands::edit::run(&mut context, cmd),
-        Commands::Insert(cmd) => commands::insert::run(&mut context, cmd),
-        Commands::Delete(cmd) => commands::delete::run(&mut context, cmd),
+        Commands::Read(cmd) => commands::read::run(&mut context, cmd).map(|_| 0),
+        Commands::Index(cmd) => commands::index::run(&mut context, cmd).map(|_| 0),
+        Commands::Edit(cmd) => commands::edit::run(&mut context, cmd).map(|_| 0),
+        Commands::Insert(cmd) => commands::insert::run(&mut context, cmd).map(|_| 0),
+        Commands::Delete(cmd) => commands::delete::run(&mut context, cmd).map(|_| 0),
         Commands::Verify(cmd) => commands::verify::run(&mut context, cmd),
-        Commands::Grep(cmd) => commands::grep::run(&mut context, cmd),
+        Commands::Grep(cmd) => commands::grep::run(&mut context, cmd).map(|_| 0),
         Commands::Annotate(cmd) => commands::annotate::run(&mut context, cmd),
-        Commands::Patch(cmd) => commands::patch::run(&mut context, cmd),
-        Commands::Swap(cmd) => commands::swap::run(&mut context, cmd),
-        Commands::Move(cmd) => commands::r#move::run(&mut context, cmd),
-        Commands::Indent(cmd) => commands::indent::run(&mut context, cmd),
-        Commands::FindBlock(cmd) => commands::find_block::run(&mut context, cmd),
-        Commands::Stats(cmd) => commands::stats::run(&mut context, cmd),
-        Commands::FromDiff(cmd) => commands::from_diff::run(&mut context, cmd),
-        Commands::MergePatches(cmd) => commands::merge_patches::run(&mut context, cmd),
-        Commands::Watch(cmd) => commands::watch::run(&mut context, cmd),
-        Commands::Explode(cmd) => commands::explode::run(&mut context, cmd),
-        Commands::Implode(cmd) => commands::implode::run(&mut context, cmd),
+        Commands::Patch(cmd) => commands::patch::run(&mut context, cmd).map(|_| 0),
+        Commands::Swap(cmd) => commands::swap::run(&mut context, cmd).map(|_| 0),
+        Commands::Move(cmd) => commands::r#move::run(&mut context, cmd).map(|_| 0),
+        Commands::Indent(cmd) => commands::indent::run(&mut context, cmd).map(|_| 0),
+        Commands::FindBlock(cmd) => commands::find_block::run(&mut context, cmd).map(|_| 0),
+        Commands::Stats(cmd) => commands::stats::run(&mut context, cmd).map(|_| 0),
+        Commands::FromDiff(cmd) => commands::from_diff::run(&mut context, cmd).map(|_| 0),
+        Commands::MergePatches(cmd) => commands::merge_patches::run(&mut context, cmd).map(|_| 0),
+        Commands::Watch(cmd) => commands::watch::run(&mut context, cmd).map(|_| 0),
+        Commands::Explode(cmd) => commands::explode::run(&mut context, cmd).map(|_| 0),
+        Commands::Implode(cmd) => commands::implode::run(&mut context, cmd).map(|_| 0),
     }
 }
 
@@ -96,8 +96,8 @@ mod tests {
 
         assert!(stdout.is_empty());
         let stderr = String::from_utf8(stderr).unwrap();
-        assert!(stderr.contains("Error: read is not implemented yet"));
-        assert!(stderr.contains("Hint: continue with the next planned implementation bead"));
+        assert!(stderr.contains("Error: I/O error:"));
+        assert!(!stderr.contains("Hint:"));
     }
 
     #[test]

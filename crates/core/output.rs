@@ -18,7 +18,7 @@ struct ErrorPayload<'a> {
 }
 
 #[derive(Serialize)]
-struct ReadLinePayload<'a> {
+pub struct ReadLinePayload<'a> {
     n: usize,
     hash: &'a str,
     content: &'a str,
@@ -170,6 +170,42 @@ pub fn print_index_json(writer: &mut impl Write, doc: &Document) -> io::Result<(
 
     serde_json::to_writer_pretty(&mut *writer, &payload)?;
     writeln!(writer)
+}
+
+pub fn print_grep(writer: &mut impl Write, doc: &Document, indexes: &[usize]) -> io::Result<()> {
+    let width = line_number_width(doc);
+    for index in indexes {
+        let line = &doc.lines[*index];
+        writeln!(
+            writer,
+            "{number:>width$}:{hash}| {content}",
+            number = line.number,
+            hash = line.short_hash,
+            content = line.content,
+            width = width
+        )?;
+    }
+    Ok(())
+}
+
+pub fn write_grep_json<W: Write, E: Write>(
+    ctx: &mut CommandContext<'_, W, E>,
+    doc: &Document,
+    indexes: &[usize],
+) -> io::Result<()> {
+    let payload = indexes
+        .iter()
+        .map(|index| {
+            let line = &doc.lines[*index];
+            ReadLinePayload {
+                n: line.number,
+                hash: &line.short_hash,
+                content: &line.content,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    write_json_success(ctx, &payload)
 }
 
 pub fn write_error<W: Write, E: Write>(

@@ -52,6 +52,35 @@ pub fn delete_line(doc: &mut Document, index: usize) -> Result<(), LinehashError
     Ok(())
 }
 
+pub fn move_line(
+    doc: &mut Document,
+    source: usize,
+    target: usize,
+    place_before: bool,
+) -> Result<usize, LinehashError> {
+    ensure_index(doc, source)?;
+    ensure_index(doc, target)?;
+
+    if source == target {
+        return Err(LinehashError::PatchFailed {
+            op_index: 0,
+            reason: "source and target must resolve to different lines".to_owned(),
+        });
+    }
+
+    let line = doc.lines.remove(source);
+    let adjusted_target = if source < target { target - 1 } else { target };
+    let insert_at = if place_before {
+        adjusted_target
+    } else {
+        adjusted_target + 1
+    };
+
+    doc.lines.insert(insert_at, line);
+    rebuild_line_metadata(doc);
+    Ok(insert_at)
+}
+
 fn rebuild_line_metadata(doc: &mut Document) {
     for (index, line) in doc.lines.iter_mut().enumerate() {
         line.number = index + 1;
@@ -107,7 +136,7 @@ fn ensure_range(doc: &Document, start: usize, end: usize) -> Result<(), Linehash
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_line, insert_line, replace_line, replace_range_with_line,
+        delete_line, insert_line, move_line, replace_line, replace_range_with_line,
         validate_single_line_content,
     };
     use crate::document::{Document, NewlineStyle};
@@ -188,6 +217,50 @@ mod tests {
         assert!(doc.lines.is_empty());
         assert_eq!(doc.render(), b"");
         assert!(!doc.trailing_newline);
+    }
+
+    #[test]
+    fn move_line_after_target_adjusts_when_source_is_above_target() {
+        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+
+        let inserted_at = move_line(&mut doc, 1, 3, false).unwrap();
+
+        assert_eq!(inserted_at, 3);
+        assert_eq!(doc.render(), b"alpha\ngamma\ndelta\nbeta\n");
+        assert_eq!(doc.lines[3].number, 4);
+    }
+
+    #[test]
+    fn move_line_before_target_adjusts_when_source_is_above_target() {
+        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+
+        let inserted_at = move_line(&mut doc, 1, 3, true).unwrap();
+
+        assert_eq!(inserted_at, 2);
+        assert_eq!(doc.render(), b"alpha\ngamma\nbeta\ndelta\n");
+        assert_eq!(doc.lines[2].number, 3);
+    }
+
+    #[test]
+    fn move_line_before_target_keeps_target_position_when_source_is_below() {
+        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+
+        let inserted_at = move_line(&mut doc, 3, 1, true).unwrap();
+
+        assert_eq!(inserted_at, 1);
+        assert_eq!(doc.render(), b"alpha\ndelta\nbeta\ngamma\n");
+        assert_eq!(doc.lines[1].number, 2);
+    }
+
+    #[test]
+    fn move_line_rejects_same_source_and_target() {
+        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+
+        let error = move_line(&mut doc, 1, 1, true).unwrap_err();
+        assert!(matches!(
+            error,
+            LinehashError::PatchFailed { op_index: 0, .. }
+        ));
     }
 
     #[test]

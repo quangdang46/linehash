@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::anchor::ResolvedLine;
 use crate::context::{CommandContext, OutputMode};
-use crate::document::{Document, NewlineStyle};
+use crate::document::{Document, FileStats, NewlineStyle};
 use crate::error::LinehashError;
 
 #[derive(Serialize)]
@@ -172,6 +172,22 @@ pub fn print_index_json(writer: &mut impl Write, doc: &Document) -> io::Result<(
     writeln!(writer)
 }
 
+pub fn print_stats(writer: &mut impl Write, stats: &FileStats) -> io::Result<()> {
+    writeln!(writer, "Lines: {}", stats.line_count)?;
+    writeln!(writer, "Unique hashes (2-char): {}", stats.unique_hashes)?;
+    writeln!(writer, "Collisions: {}", stats.collision_count)?;
+    writeln!(writer, "Collision pairs: {}", stats.collision_pairs.len())?;
+    writeln!(writer, "Est. read tokens: ~{}", stats.estimated_read_tokens)?;
+    writeln!(writer, "Hash length advice: {}-char recommended", stats.hash_length_advice)?;
+    writeln!(writer, "Suggested --context: {}", stats.suggested_context_n)?;
+    writeln!(writer, "Note: v1 anchors still use fixed 2-char hashes.")
+}
+
+pub fn print_stats_json(writer: &mut impl Write, stats: &FileStats) -> io::Result<()> {
+    serde_json::to_writer_pretty(&mut *writer, stats)?;
+    writeln!(writer)
+}
+
 pub fn print_grep(writer: &mut impl Write, doc: &Document, indexes: &[usize]) -> io::Result<()> {
     let width = line_number_width(doc);
     for index in indexes {
@@ -262,9 +278,12 @@ fn collect_context_indexes(doc: &Document, anchors: &[ResolvedLine], context: us
 
 #[cfg(test)]
 mod tests {
-    use super::{print_index, print_index_json, print_read, print_read_context, print_read_json};
+    use super::{
+        print_index, print_index_json, print_read, print_read_context, print_read_json,
+        print_stats, print_stats_json,
+    };
     use crate::anchor::ResolvedLine;
-    use crate::document::Document;
+    use crate::document::{Document, FileStats};
     use std::path::Path;
 
     #[test]
@@ -427,6 +446,51 @@ mod tests {
         assert_eq!(parsed["lines"][0]["n"], 1);
         assert_eq!(parsed["lines"][1]["hash"], doc.lines[1].short_hash);
         assert!(parsed["lines"][0].get("content").is_none());
+    }
+
+    #[test]
+    fn test_stats_pretty_output_includes_summary_fields() {
+        let stats = FileStats {
+            line_count: 10,
+            unique_hashes: 9,
+            collision_count: 2,
+            collision_pairs: vec![(2, 7)],
+            estimated_read_tokens: 42,
+            hash_length_advice: 3,
+            suggested_context_n: 5,
+        };
+        let mut out = Vec::new();
+        print_stats(&mut out, &stats).unwrap();
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("Lines: 10"));
+        assert!(rendered.contains("Unique hashes (2-char): 9"));
+        assert!(rendered.contains("Collisions: 2"));
+        assert!(rendered.contains("Collision pairs: 1"));
+        assert!(rendered.contains("Est. read tokens: ~42"));
+        assert!(rendered.contains("Hash length advice: 3-char recommended"));
+        assert!(rendered.contains("Suggested --context: 5"));
+    }
+
+    #[test]
+    fn test_stats_json_valid() {
+        let stats = FileStats {
+            line_count: 10,
+            unique_hashes: 9,
+            collision_count: 2,
+            collision_pairs: vec![(2, 7)],
+            estimated_read_tokens: 42,
+            hash_length_advice: 3,
+            suggested_context_n: 5,
+        };
+        let mut out = Vec::new();
+        print_stats_json(&mut out, &stats).unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed["line_count"], 10);
+        assert_eq!(parsed["unique_hashes"], 9);
+        assert_eq!(parsed["collision_count"], 2);
+        assert_eq!(parsed["collision_pairs"][0][0], 2);
+        assert_eq!(parsed["hash_length_advice"], 3);
+        assert_eq!(parsed["suggested_context_n"], 5);
     }
 
     fn numbered_doc(line_count: usize) -> Document {

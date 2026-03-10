@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use serde::Serialize;
+
 use crate::error::LinehashError;
 use crate::hash;
 
@@ -36,6 +38,17 @@ pub struct LineRecord {
     pub content: String,
     pub full_hash: u32,
     pub short_hash: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FileStats {
+    pub line_count: usize,
+    pub unique_hashes: usize,
+    pub collision_count: usize,
+    pub collision_pairs: Vec<(usize, usize)>,
+    pub estimated_read_tokens: usize,
+    pub hash_length_advice: u8,
+    pub suggested_context_n: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,6 +129,26 @@ impl Document {
         }
 
         rendered.into_bytes()
+    }
+
+    pub fn compute_stats(&self) -> FileStats {
+        let index = self.build_index();
+        let mut collision_pairs = collect_collision_pairs(self, &index);
+        collision_pairs.sort_unstable();
+
+        FileStats {
+            line_count: self.len(),
+            unique_hashes: index.len(),
+            collision_count: index
+                .values()
+                .filter(|positions| positions.len() >= 2)
+                .map(Vec::len)
+                .sum(),
+            collision_pairs,
+            estimated_read_tokens: estimate_read_tokens(self),
+            hash_length_advice: recommend_hash_length(self),
+            suggested_context_n: suggest_context_n(self),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -206,6 +239,77 @@ fn detect_newline_style(content: &str, path: &Path) -> Result<NewlineStyle, Line
     }
 }
 
+fn collect_collision_pairs(doc: &Document, index: &HashMap<String, Vec<usize>>) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+
+    for positions in index.values().filter(|positions| positions.len() >= 2) {
+        for left in 0..positions.len() {
+            for right in left + 1..positions.len() {
+                pairs.push((
+                    doc.lines[positions[left]].number,
+                    doc.lines[positions[right]].number,
+                ));
+            }
+        }
+    }
+
+    pairs
+}
+
+fn estimate_read_tokens(doc: &Document) -> usize {
+    let content_chars: usize = doc.lines.iter().map(|line| line.content.len()).sum();
+    let anchor_overhead = doc.lines.len() * 8;
+    (content_chars + anchor_overhead) / 4
+}
+
+fn recommend_hash_length(doc: &Document) -> u8 {
+    let line_count = doc.len();
+    for hash_len in [2_u8, 3, 4] {
+        let buckets = 16_f64.powi(i32::from(hash_len));
+        if collision_probability(line_count, buckets) < 0.01 {
+            return hash_len;
+        }
+    }
+    4
+}
+
+fn collision_probability(line_count: usize, buckets: f64) -> f64 {
+    if line_count <= 1 {
+        return 0.0;
+    }
+
+    let line_count = line_count as f64;
+    1.0 - (-(line_count * (line_count - 1.0)) / (2.0 * buckets)).exp()
+}
+
+fn suggest_context_n(doc: &Document) -> usize {
+    let markers = doc
+        .lines
+        .iter()
+        .map(|line| line.content.as_str())
+        .enumerate()
+        .filter_map(|(index, content)| is_structure_marker(content).then_some(index + 1))
+        .collect::<Vec<_>>();
+
+    if markers.len() < 2 {
+        return 5;
+    }
+
+    let mut gaps = markers
+        .windows(2)
+        .map(|window| window[1] - window[0])
+        .collect::<Vec<_>>();
+    gaps.sort_unstable();
+    let median_gap = gaps[gaps.len() / 2];
+    (median_gap / 2).clamp(3, 20)
+}
+
+fn is_structure_marker(content: &str) -> bool {
+    ["function ", "def ", "class ", "fn ", "impl "]
+        .iter()
+        .any(|marker| content.contains(marker))
+}
+
 #[cfg(unix)]
 fn inode_from_metadata(metadata: &fs::Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt;
@@ -220,7 +324,7 @@ fn inode_from_metadata(_metadata: &fs::Metadata) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Document, NewlineStyle};
+    use super::{Document, FileStats, NewlineStyle};
     use crate::error::LinehashError;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -381,6 +485,95 @@ mod tests {
             .file_meta
             .expect("file metadata should be captured");
         assert!(metadata.mtime_secs >= 0);
+    }
+
+    #[test]
+    fn test_empty_file_stats() {
+        let document = Document::from_str(Path::new("demo.txt"), "").unwrap();
+        let stats = document.compute_stats();
+        assert_eq!(
+            stats,
+            FileStats {
+                line_count: 0,
+                unique_hashes: 0,
+                collision_count: 0,
+                collision_pairs: vec![],
+                estimated_read_tokens: 0,
+                hash_length_advice: 2,
+                suggested_context_n: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn test_no_collisions_file_stats() {
+        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+        let stats = document.compute_stats();
+        assert_eq!(stats.line_count, 2);
+        assert_eq!(stats.unique_hashes, 2);
+        assert_eq!(stats.collision_count, 0);
+        assert!(stats.collision_pairs.is_empty());
+    }
+
+    #[test]
+    fn test_collision_count_and_pairs_correct() {
+        let (first, second) = find_collision_pair();
+        let document =
+            Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\nunique\n")).unwrap();
+        let stats = document.compute_stats();
+        assert_eq!(stats.collision_count, 2);
+        assert_eq!(stats.collision_pairs, vec![(1, 2)]);
+    }
+
+    #[test]
+    fn test_token_estimate_proportional_to_size() {
+        let short = Document::from_str(Path::new("demo.txt"), "a\n").unwrap();
+        let long = Document::from_str(Path::new("demo.txt"), "a very long line indeed\n").unwrap();
+        assert!(
+            long.compute_stats().estimated_read_tokens > short.compute_stats().estimated_read_tokens
+        );
+    }
+
+    #[test]
+    fn test_hash_length_advice_2_for_small_file() {
+        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+        assert_eq!(document.compute_stats().hash_length_advice, 2);
+    }
+
+    #[test]
+    fn test_hash_length_advice_4_for_medium_file() {
+        let content = (1..=40)
+            .map(|n| format!("line-{n}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        let document = Document::from_str(Path::new("demo.txt"), &content).unwrap();
+        assert_eq!(document.compute_stats().hash_length_advice, 4);
+    }
+
+    #[test]
+    fn test_context_suggestion_minimum_3_with_dense_markers() {
+        let document = Document::from_str(
+            Path::new("demo.txt"),
+            "fn a\nfn b\nfn c\nfn d\n",
+        )
+        .unwrap();
+        assert_eq!(document.compute_stats().suggested_context_n, 3);
+    }
+
+    #[test]
+    fn test_context_suggestion_falls_back_to_5_without_markers() {
+        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
+        assert_eq!(document.compute_stats().suggested_context_n, 5);
+    }
+
+    #[test]
+    fn test_context_suggestion_capped_at_20() {
+        let mut lines = vec![String::from("fn a")];
+        lines.extend((0..50).map(|n| format!("line-{n}")));
+        lines.push(String::from("fn b"));
+        let document = Document::from_str(Path::new("demo.txt"), &(lines.join("\n") + "\n")).unwrap();
+        assert_eq!(document.compute_stats().suggested_context_n, 20);
     }
 
     fn write_temp_file(content: &str) -> (TempDir, PathBuf) {

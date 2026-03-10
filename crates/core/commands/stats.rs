@@ -2,11 +2,22 @@ use std::io::Write;
 
 use crate::cli::StatsCmd;
 use crate::context::CommandContext;
+use crate::document::Document;
 use crate::error::LinehashError;
+use crate::output;
 
 pub fn run<W: Write, E: Write>(
-    _ctx: &mut CommandContext<'_, W, E>,
-    _cmd: StatsCmd,
+    ctx: &mut CommandContext<'_, W, E>,
+    cmd: StatsCmd,
 ) -> Result<(), LinehashError> {
-    Err(LinehashError::NotImplemented { command: "stats" })
+    let doc = Document::load(&cmd.file)?;
+    let stats = doc.compute_stats();
+
+    if cmd.json {
+        output::print_stats_json(ctx.stdout(), &stats)?;
+    } else {
+        output::print_stats(ctx.stdout(), &stats)?;
+    }
+
+    Ok(())
 }

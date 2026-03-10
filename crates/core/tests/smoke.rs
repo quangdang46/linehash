@@ -871,6 +871,49 @@ fn patch_preserves_crlf_and_trailing_newline() {
 }
 
 #[test]
+fn stats_pretty_output_reports_summary_fields() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let (stdout, stderr, code) = run_linehash(&["stats", &file_arg]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Lines: 3"));
+    assert!(stdout.contains("Unique hashes (2-char):"));
+    assert!(stdout.contains("Collisions:"));
+    assert!(stdout.contains("Est. read tokens:"));
+    assert!(stdout.contains("Hash length advice:"));
+    assert!(stdout.contains("Suggested --context:"));
+}
+
+#[test]
+fn stats_json_output_is_structured() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["stats", &file_arg, "--json"]);
+
+    assert_eq!(parsed["line_count"], 3);
+    assert!(parsed["unique_hashes"].is_u64());
+    assert!(parsed["collision_count"].is_u64());
+    assert!(parsed["collision_pairs"].is_array());
+    assert!(parsed["estimated_read_tokens"].is_u64());
+    assert!(parsed["hash_length_advice"].is_u64());
+    assert!(parsed["suggested_context_n"].is_u64());
+}
+
+#[test]
+fn stats_reports_collision_pairs_for_collision_file() {
+    let (first, second) = find_collision_pair();
+    let file = tmpfile(&format!("{first}\n{second}\nunique\n"));
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["stats", &file_arg, "--json"]);
+
+    assert_eq!(parsed["collision_count"], 2);
+    assert_eq!(parsed["collision_pairs"][0][0], 1);
+    assert_eq!(parsed["collision_pairs"][0][1], 2);
+}
+
+#[test]
 fn helper_tmpfile_writes_expected_content() {
     let file = tmpfile("alpha\nbeta\n");
     let contents = std::fs::read_to_string(&file).unwrap();
@@ -890,4 +933,22 @@ fn anchor_from_file(file_arg: &str, line_no: usize) -> String {
         line_no,
         parsed["lines"][line_no - 1]["hash"].as_str().unwrap()
     )
+}
+
+fn find_collision_pair() -> (String, String) {
+    use std::collections::HashMap;
+    use xxhash_rust::xxh32::xxh32;
+
+    let mut seen: HashMap<String, String> = HashMap::new();
+    for i in 0..10_000 {
+        let candidate = format!("line-{i}");
+        let hash = format!("{:02x}", xxh32(candidate.as_bytes(), 0) & 0xff);
+        if let Some(existing) = seen.insert(hash, candidate.clone()) {
+            if existing != candidate {
+                return (existing, candidate);
+            }
+        }
+    }
+
+    panic!("failed to find a short-hash collision in search space");
 }

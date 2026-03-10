@@ -124,6 +124,8 @@ linehash find-block <file> <anchor>
 
 # Multi-op workflows
 linehash patch <file> <patch.json>
+# patch.json shape:
+# {"ops":[{"op":"edit","anchor":"3:64","content":"  return message.toUpperCase()"}]}
 linehash from-diff <file> <diff.patch>
 linehash merge-patches <patch-a.json> <patch-b.json> --base <file>
 

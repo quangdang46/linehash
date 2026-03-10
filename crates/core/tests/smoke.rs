@@ -811,7 +811,7 @@ fn patch_dry_run_does_not_modify_file() {
 
     assert_eq!(code, 0, "expected success, got stderr: {stderr}");
     assert!(stderr.is_empty());
-    assert!(stdout.contains("Would apply applied 1 ops: 1 edit, 0 inserts, 0 deletes."));
+    assert!(stdout.contains("Would apply 1 ops: 1 edit, 0 inserts, 0 deletes."));
     assert!(stdout.contains("No file was written."));
     assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\n");
 }

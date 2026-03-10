@@ -31,3 +31,15 @@ tempfile = { workspace = true }
 [[bench]]
 name = "hash_bench"
 harness = false
+
+[[bench]]
+name = "stats_bench"
+harness = false
+
+[[bench]]
+name = "verify_bench"
+harness = false
+
+[[bench]]
+name = "watch_bench"
+harness = false

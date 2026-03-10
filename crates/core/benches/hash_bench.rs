@@ -10,33 +10,36 @@ mod document;
 mod error;
 #[path = "../hash.rs"]
 mod hash;
+mod support;
 
 use document::Document;
-
-fn generate_fixture(line_count: usize) -> String {
-    let mut lines = Vec::with_capacity(line_count);
-    for i in 0..line_count {
-        lines.push(format!(
-            "fn generated_line_{i:05}() {{ let value = \"{:08x}\"; }}",
-            i.wrapping_mul(2654435761_u32 as usize)
-        ));
-    }
-    lines.join("\n") + "\n"
-}
+use support::{generate_long_fixture, generate_short_fixture};
 
 fn bench_hash_1k_lines(c: &mut Criterion) {
-    let file = generate_fixture(1_000);
+    let file = generate_short_fixture(1_000);
     c.bench_function("hash_1k_lines", |b| {
         b.iter(|| black_box(Document::from_str(Path::new("bench.rs"), &file).unwrap()))
     });
 }
 
 fn bench_hash_10k_lines(c: &mut Criterion) {
-    let file = generate_fixture(10_000);
+    let file = generate_short_fixture(10_000);
     c.bench_function("hash_10k_lines", |b| {
         b.iter(|| black_box(Document::from_str(Path::new("bench.rs"), &file).unwrap()))
     });
 }
 
-criterion_group!(benches, bench_hash_1k_lines, bench_hash_10k_lines);
+fn bench_hash_10k_long_lines(c: &mut Criterion) {
+    let file = generate_long_fixture(10_000);
+    c.bench_function("hash_10k_long_lines", |b| {
+        b.iter(|| black_box(Document::from_str(Path::new("bench.rs"), &file).unwrap()))
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_hash_1k_lines,
+    bench_hash_10k_lines,
+    bench_hash_10k_long_lines
+);
 criterion_main!(benches);

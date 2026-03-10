@@ -871,6 +871,203 @@ fn patch_preserves_crlf_and_trailing_newline() {
 }
 
 #[test]
+fn edit_receipt_prints_json_and_updates_file() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&["edit", &file_arg, &anchor, "gamma", "--receipt"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(parsed["op"], "edit");
+    assert_eq!(parsed["file"], file_arg);
+    assert_eq!(parsed["changes"][0]["line_no"], 2);
+    assert_eq!(parsed["changes"][0]["kind"], "Modified");
+    assert_eq!(parsed["changes"][0]["before"], "beta");
+    assert_eq!(parsed["changes"][0]["after"], "gamma");
+    assert_ne!(parsed["file_hash_before"], parsed["file_hash_after"]);
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+}
+
+#[test]
+fn insert_receipt_reports_inserted_line() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 1);
+    let parsed = parse_json(&["insert", &file_arg, &anchor, "gamma", "--receipt"]);
+
+    assert_eq!(parsed["op"], "insert");
+    assert_eq!(parsed["changes"][0]["line_no"], 2);
+    assert_eq!(parsed["changes"][0]["kind"], "Inserted");
+    assert_eq!(parsed["changes"][0]["before"], serde_json::Value::Null);
+    assert_eq!(parsed["changes"][0]["after"], "gamma");
+}
+
+#[test]
+fn delete_receipt_reports_deleted_line() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let parsed = parse_json(&["delete", &file_arg, &anchor, "--receipt"]);
+
+    assert_eq!(parsed["op"], "delete");
+    assert_eq!(parsed["changes"][0]["line_no"], 2);
+    assert_eq!(parsed["changes"][0]["kind"], "Deleted");
+    assert_eq!(parsed["changes"][0]["before"], "beta");
+    assert_eq!(parsed["changes"][0]["after"], serde_json::Value::Null);
+}
+
+#[test]
+fn patch_receipt_contains_multiple_structured_changes() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let edit_anchor = anchor_from_file(&file_arg, 2);
+    let delete_anchor = anchor_from_file(&file_arg, 3);
+    let patch_file = tmpfile(&format!(
+        "{{\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"BETA\"}},{{\"op\":\"insert\",\"anchor\":{:?},\"content\":\"between\"}},{{\"op\":\"delete\",\"anchor\":{:?}}}]}}",
+        edit_anchor, edit_anchor, delete_anchor
+    ));
+    let patch_arg = patch_file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["patch", &file_arg, &patch_arg, "--receipt"]);
+
+    assert_eq!(parsed["op"], "patch");
+    assert!(parsed["changes"].as_array().unwrap().len() >= 3);
+    assert_eq!(parsed["changes"][0]["kind"], "Modified");
+    assert_eq!(parsed["changes"][1]["kind"], "Inserted");
+    assert_eq!(parsed["changes"][2]["kind"], "Deleted");
+}
+
+#[test]
+fn audit_log_appends_on_success() {
+    let file = tmpfile("alpha\nbeta\n");
+    let audit = tmpfile("");
+    let file_arg = file.to_string_lossy().into_owned();
+    let audit_arg = audit.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &anchor,
+        "gamma",
+        "--audit-log",
+        &audit_arg,
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    let contents = fs::read_to_string(&audit).unwrap();
+    let lines = contents.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+    let parsed: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(parsed["op"], "edit");
+}
+
+#[test]
+fn audit_log_appends_two_entries_without_truncation() {
+    let file = tmpfile("alpha\nbeta\n");
+    let audit = tmpfile("");
+    let file_arg = file.to_string_lossy().into_owned();
+    let audit_arg = audit.to_string_lossy().into_owned();
+
+    let first_anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &first_anchor,
+        "gamma",
+        "--audit-log",
+        &audit_arg,
+    ]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    let second_anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &second_anchor,
+        "delta",
+        "--audit-log",
+        &audit_arg,
+    ]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    let contents = fs::read_to_string(&audit).unwrap();
+    let lines = contents.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2);
+    let first: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(first["changes"][0]["after"], "gamma");
+    assert_eq!(second["changes"][0]["after"], "delta");
+}
+
+#[test]
+fn failed_edit_does_not_append_audit_log() {
+    let file = tmpfile("alpha\nbeta\n");
+    let audit = tmpfile("");
+    let file_arg = file.to_string_lossy().into_owned();
+    let audit_arg = audit.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        "2:ff",
+        "gamma",
+        "--audit-log",
+        &audit_arg,
+    ]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("expected hash ff"));
+    assert_eq!(fs::read_to_string(&audit).unwrap(), "");
+}
+
+#[test]
+fn dry_run_does_not_append_audit_log_or_emit_receipt() {
+    let file = tmpfile("alpha\nbeta\n");
+    let audit = tmpfile("");
+    let file_arg = file.to_string_lossy().into_owned();
+    let audit_arg = audit.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &anchor,
+        "gamma",
+        "--dry-run",
+        "--receipt",
+        "--audit-log",
+        &audit_arg,
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stdout.contains("Would change line 2:"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
+    assert_eq!(fs::read_to_string(&audit).unwrap(), "");
+}
+
+#[test]
+fn audit_log_append_failure_warns_but_edit_succeeds() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let audit_dir = tempfile::TempDir::new().unwrap();
+    let audit_arg = audit_dir.path().to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&[
+        "edit",
+        &file_arg,
+        &anchor,
+        "gamma",
+        "--audit-log",
+        &audit_arg,
+    ]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\n");
+    assert!(stderr.contains("Warning: wrote file but failed to append audit log"));
+}
+
+#[test]
 fn stats_pretty_output_reports_summary_fields() {
     let file = tmpfile("alpha\nbeta\ngamma\n");
     let file_arg = file.to_string_lossy().into_owned();

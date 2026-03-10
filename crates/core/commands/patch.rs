@@ -13,6 +13,7 @@ use crate::error::LinehashError;
 use crate::hash;
 use crate::mutation::validate_single_line_content;
 use crate::output;
+use crate::receipt::{self, ChangeKind, LineChange};
 
 pub fn run<W: Write, E: Write>(
     ctx: &mut CommandContext<'_, W, E>,
@@ -23,6 +24,7 @@ pub fn run<W: Write, E: Write>(
 
     let original = Document::load(&cmd.file)?;
     check_guard(&original, cmd.expect_mtime, cmd.expect_inode)?;
+    let before_bytes = original.render();
     let index = original.build_index();
     let plan = build_plan(&patch, &original, &index)?;
     let result = apply_plan(&original, &plan)?;
@@ -31,7 +33,26 @@ pub fn run<W: Write, E: Write>(
         return write_dry_run(ctx, &result.document, &result.summary);
     }
 
-    atomic_write(&cmd.file, &result.document.render())?;
+    let after_bytes = result.document.render();
+    atomic_write(&cmd.file, &after_bytes)?;
+
+    let receipt = receipt::build_receipt(
+        "patch",
+        &cmd.file,
+        result.changes.clone(),
+        &before_bytes,
+        &after_bytes,
+    );
+
+    if let Some(log_path) = &cmd.audit_log {
+        if let Err(error) = receipt::append_to_audit_log(&receipt, log_path) {
+            receipt::write_audit_warning(ctx, log_path, &error).map_err(LinehashError::from)?;
+        }
+    }
+
+    if cmd.receipt {
+        return receipt::write_receipt(ctx, &receipt);
+    }
 
     match ctx.output_mode() {
         OutputMode::Json => Ok(()),
@@ -113,6 +134,7 @@ enum Occupancy {
 struct PatchResult {
     document: Document,
     summary: PatchSummary,
+    changes: Vec<LineChange>,
 }
 
 #[derive(Clone, Debug)]
@@ -317,6 +339,7 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
         insert_count: 0,
         delete_count: 0,
     };
+    let mut changes = Vec::new();
 
     for op in plan {
         match op {
@@ -334,6 +357,12 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
                             reason: format!("resolved line {} is out of bounds", line + 1),
                         })?;
                 *slot = Some(content.clone());
+                changes.push(LineChange {
+                    line_no: line + 1,
+                    kind: ChangeKind::Modified,
+                    before: Some(before.clone()),
+                    after: Some(content.clone()),
+                });
                 summary.edit_count += 1;
                 summary.actions.push(format!(
                     "edit line {}: {:?} -> {:?}",
@@ -358,6 +387,22 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
                             reason: format!("resolved start line {} is out of bounds", start + 1),
                         })?;
                 *slot = Some(content.clone());
+                if let Some(first) = before.first() {
+                    changes.push(LineChange {
+                        line_no: start + 1,
+                        kind: ChangeKind::Modified,
+                        before: Some(first.clone()),
+                        after: Some(content.clone()),
+                    });
+                }
+                for (offset, removed) in before.iter().enumerate().skip(1) {
+                    changes.push(LineChange {
+                        line_no: start + offset + 1,
+                        kind: ChangeKind::Deleted,
+                        before: Some(removed.clone()),
+                        after: None,
+                    });
+                }
                 for idx in start + 1..=end {
                     let skip =
                         skip_until
@@ -385,6 +430,12 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
                 ..
             } => {
                 inserts_before[*boundary].push(content.clone());
+                changes.push(LineChange {
+                    line_no: boundary + 1,
+                    kind: ChangeKind::Inserted,
+                    before: None,
+                    after: Some(content.clone()),
+                });
                 summary.insert_count += 1;
                 let relation = if *before { "before" } else { "after" };
                 summary.actions.push(format!(
@@ -404,6 +455,12 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
                         reason: format!("resolved line {} is out of bounds", line + 1),
                     })?;
                 *slot = true;
+                changes.push(LineChange {
+                    line_no: line + 1,
+                    kind: ChangeKind::Deleted,
+                    before: Some(content.clone()),
+                    after: None,
+                });
                 summary.delete_count += 1;
                 summary
                     .actions
@@ -434,7 +491,11 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
         document.trailing_newline = false;
     }
 
-    Ok(PatchResult { document, summary })
+    Ok(PatchResult {
+        document,
+        summary,
+        changes,
+    })
 }
 
 fn build_lines(contents: &[String]) -> Vec<LineRecord> {

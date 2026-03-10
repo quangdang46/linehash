@@ -8,6 +8,7 @@ use crate::document::Document;
 use crate::error::LinehashError;
 use crate::mutation::insert_line;
 use crate::output;
+use crate::receipt::{self, ChangeKind, LineChange};
 
 pub fn run<W: Write, E: Write>(
     ctx: &mut CommandContext<'_, W, E>,
@@ -15,6 +16,7 @@ pub fn run<W: Write, E: Write>(
 ) -> Result<(), LinehashError> {
     let mut doc = Document::load(&cmd.file)?;
     check_guard(&doc, cmd.expect_mtime, cmd.expect_inode)?;
+    let before_bytes = doc.render();
     let index = doc.build_index();
     let anchor = parse_anchor(&cmd.anchor)?;
     let resolved = resolve(&anchor, &doc, &index)?;
@@ -36,7 +38,26 @@ pub fn run<W: Write, E: Write>(
         return write_dry_run(ctx, &doc, &summary);
     }
 
-    atomic_write(&cmd.file, &doc.render())?;
+    let after_bytes = doc.render();
+    atomic_write(&cmd.file, &after_bytes)?;
+
+    let receipt = receipt::build_receipt(
+        "insert",
+        &cmd.file,
+        summary.line_changes(),
+        &before_bytes,
+        &after_bytes,
+    );
+
+    if let Some(log_path) = &cmd.audit_log {
+        if let Err(error) = receipt::append_to_audit_log(&receipt, log_path) {
+            receipt::write_audit_warning(ctx, log_path, &error).map_err(LinehashError::from)?;
+        }
+    }
+
+    if cmd.receipt {
+        return receipt::write_receipt(ctx, &receipt);
+    }
 
     match ctx.output_mode() {
         OutputMode::Json => Ok(()),
@@ -78,5 +99,14 @@ struct InsertSummary {
 impl InsertSummary {
     fn success_message(&self) -> String {
         format!("Inserted line {}.", self.inserted_line)
+    }
+
+    fn line_changes(&self) -> Vec<LineChange> {
+        vec![LineChange {
+            line_no: self.inserted_line,
+            kind: ChangeKind::Inserted,
+            before: None,
+            after: Some(self.content.clone()),
+        }]
     }
 }

@@ -8,6 +8,7 @@ use crate::document::Document;
 use crate::error::LinehashError;
 use crate::mutation::{replace_line, replace_range_with_line};
 use crate::output;
+use crate::receipt::{self, ChangeKind, LineChange};
 
 pub fn run<W: Write, E: Write>(
     ctx: &mut CommandContext<'_, W, E>,
@@ -15,6 +16,7 @@ pub fn run<W: Write, E: Write>(
 ) -> Result<(), LinehashError> {
     let mut doc = Document::load(&cmd.file)?;
     check_guard(&doc, cmd.expect_mtime, cmd.expect_inode)?;
+    let before_bytes = doc.render();
     let index = doc.build_index();
 
     let summary = match parse_range(&cmd.anchor) {
@@ -49,7 +51,26 @@ pub fn run<W: Write, E: Write>(
         return write_dry_run(ctx, &doc, &summary);
     }
 
-    atomic_write(&cmd.file, &doc.render())?;
+    let after_bytes = doc.render();
+    atomic_write(&cmd.file, &after_bytes)?;
+
+    let receipt = receipt::build_receipt(
+        "edit",
+        &cmd.file,
+        summary.line_changes(),
+        &before_bytes,
+        &after_bytes,
+    );
+
+    if let Some(log_path) = &cmd.audit_log {
+        if let Err(error) = receipt::append_to_audit_log(&receipt, log_path) {
+            receipt::write_audit_warning(ctx, log_path, &error).map_err(LinehashError::from)?;
+        }
+    }
+
+    if cmd.receipt {
+        return receipt::write_receipt(ctx, &receipt);
+    }
 
     match ctx.output_mode() {
         OutputMode::Json => Ok(()),
@@ -121,6 +142,46 @@ impl EditSummary {
                 end_line,
                 ..
             } => format!("Edited lines {start_line}-{end_line}."),
+        }
+    }
+
+    fn line_changes(&self) -> Vec<LineChange> {
+        match self {
+            EditSummary::Single {
+                line_no,
+                before,
+                after,
+            } => vec![LineChange {
+                line_no: *line_no,
+                kind: ChangeKind::Modified,
+                before: Some(before.clone()),
+                after: Some(after.clone()),
+            }],
+            EditSummary::Range {
+                start_line,
+                before,
+                after,
+                ..
+            } => {
+                let mut changes = Vec::with_capacity(before.len());
+                if let Some(first) = before.first() {
+                    changes.push(LineChange {
+                        line_no: *start_line,
+                        kind: ChangeKind::Modified,
+                        before: Some(first.clone()),
+                        after: Some(after.clone()),
+                    });
+                }
+                for (offset, removed) in before.iter().enumerate().skip(1) {
+                    changes.push(LineChange {
+                        line_no: *start_line + offset,
+                        kind: ChangeKind::Deleted,
+                        before: Some(removed.clone()),
+                        after: None,
+                    });
+                }
+                changes
+            }
         }
     }
 }

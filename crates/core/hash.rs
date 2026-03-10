@@ -3,7 +3,11 @@
 use xxhash_rust::xxh32::xxh32;
 
 pub fn full_hash(line: &str) -> u32 {
-    xxh32(line.as_bytes(), 0)
+    full_hash_bytes(line.as_bytes())
+}
+
+pub fn full_hash_bytes(bytes: &[u8]) -> u32 {
+    xxh32(bytes, 0)
 }
 
 pub fn short_hash(line: &str) -> String {
@@ -20,7 +24,7 @@ pub fn collides(a: &str, b: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{collides, full_hash, short_from_full, short_hash};
+    use super::{collides, full_hash, full_hash_bytes, short_from_full, short_hash};
     use std::collections::HashMap;
     use xxhash_rust::xxh32::xxh32;
 
@@ -86,6 +90,11 @@ mod tests {
     #[test]
     fn test_full_hash_seed_zero() {
         assert_eq!(full_hash("abc"), xxh32(b"abc", 0));
+    }
+
+    #[test]
+    fn test_full_hash_bytes_seed_zero() {
+        assert_eq!(full_hash_bytes(b"abc\ndef"), xxh32(b"abc\ndef", 0));
     }
 
     #[test]

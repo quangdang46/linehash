@@ -1,7 +1,27 @@
 # linehash
 
-> Stable line-addressed file reading and editing for Claude Code.
-> Every line gets a 2-char content hash. Edit by hash, not by reproducing whitespace.
+> Stable line-addressed file reading and editing for Claude Code, AI coding agents, and patch-safe automation.
+> Every line gets a 2-char content hash, so edits target anchors instead of fragile whitespace-exact string replacement.
+
+`linehash` is a Rust CLI for safe file editing with content-hashed line anchors. It helps Claude Code and other AI coding tools read files, locate lines, apply edits, and reject stale changes before they corrupt code.
+
+## Why linehash
+
+- Built for **Claude Code** and **AI coding agents**
+- Safer than `str_replace` for **file editing** and **patch workflows**
+- Uses **content-hashed line anchors** instead of fragile exact-text matching
+- Detects **stale reads**, **ambiguous anchors**, and **concurrent file changes**
+- Written in **Rust** with simple CLI and JSON output for automation
+
+## linehash vs str_replace vs patch editing
+
+| Tool / workflow | How it locates code | Main failure mode | Best use case |
+|---|---|---|---|
+| `str_replace` | Exact old text match | Fails when whitespace or formatting differs | Small literal replacements when exact text is known |
+| Unified diff / patch | Context lines around a hunk | Hunks can fail or apply badly after nearby edits | Reviewable multi-line changes and code review workflows |
+| `linehash` | Content-hashed line anchors like `12:ab` | Rejects stale or ambiguous anchors instead of guessing | Safe AI-assisted file editing, targeted edits, and patch-safe automation |
+
+**Why this matters for AI coding:** models often know *what* to change but are less reliable at reproducing the exact old text required by `str_replace`. `linehash` reduces that failure mode by letting tools edit by anchor, verify file state, and stop on stale reads before code is corrupted.
 
 ---
 
@@ -84,11 +104,15 @@ Simplest tool in the suite.
 
 ## Installation
 
+Install the Rust CLI from crates.io:
+
 ```bash
 cargo install linehash
 ```
 
 ## Usage
+
+Common workflows for Claude Code, AI code editing, and patch-safe file automation:
 
 ```bash
 # Read file with hash tags

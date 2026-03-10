@@ -386,6 +386,37 @@ fn edit_accepts_matching_mtime_and_inode_guards() {
 }
 
 #[test]
+fn edit_qualified_anchor_rejects_stale_line_without_retargeting() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let stale_anchor = anchor_from_file(&file_arg, 2);
+    fs::write(&file, "alpha\ngamma\nbeta\n").unwrap();
+
+    let (_stdout, stderr, code) = run_linehash(&["edit", &file_arg, &stale_anchor, "BETA"]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("content changed since last read"));
+    assert!(stderr.contains("hash still exists at line(s) 3"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ngamma\nbeta\n");
+}
+
+#[test]
+fn edit_ambiguous_hash_rejects_without_changing_file() {
+    let (first, second) = find_collision_pair();
+    let file = tmpfile(&format!("{first}\nunique\n{second}\n"));
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let ambiguous = parsed["lines"][0]["hash"].as_str().unwrap();
+
+    let (_stdout, stderr, code) = run_linehash(&["edit", &file_arg, ambiguous, "updated"]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("matches 2 lines"));
+    assert!(stderr.contains("use a line-qualified hash"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{first}\nunique\n{second}\n"));
+}
+
+#[test]
 fn insert_after_anchor_updates_file_contents() {
     let file = tmpfile("alpha\ngamma\n");
     let file_arg = file.to_string_lossy().into_owned();

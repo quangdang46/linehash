@@ -1233,6 +1233,59 @@ fn find_block_unknown_extension_with_mixed_heuristics_is_ambiguous() {
 }
 
 #[test]
+fn merge_patches_json_merges_non_conflicting_ops() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor1 = anchor_from_file(&file_arg, 1);
+    let anchor3 = anchor_from_file(&file_arg, 3);
+    let patch_a = tmpfile(&format!("{{\"file\":{:?},\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"ALPHA\"}}]}}", file_arg, anchor1));
+    let patch_b = tmpfile(&format!("{{\"file\":{:?},\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"GAMMA\"}}]}}", file_arg, anchor3));
+    let patch_a_arg = patch_a.to_string_lossy().into_owned();
+    let patch_b_arg = patch_b.to_string_lossy().into_owned();
+    let parsed = parse_json(&["merge-patches", &patch_a_arg, &patch_b_arg, "--base", &file_arg, "--json"]);
+
+    assert!(parsed["conflicts"].as_array().unwrap().is_empty());
+    assert_eq!(parsed["merged_patch"]["file"], file_arg);
+    assert_eq!(parsed["merged_patch"]["ops"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn merge_patches_json_reports_conflicts_and_keeps_non_conflicting_ops() {
+    let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor2 = anchor_from_file(&file_arg, 2);
+    let anchor4 = anchor_from_file(&file_arg, 4);
+    let patch_a = tmpfile(&format!("{{\"file\":{:?},\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"BETA\"}},{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"DELTA\"}}]}}", file_arg, anchor2, anchor4));
+    let patch_b = tmpfile(&format!("{{\"file\":{:?},\"ops\":[{{\"op\":\"delete\",\"anchor\":{:?}}}]}}", file_arg, anchor2));
+    let patch_a_arg = patch_a.to_string_lossy().into_owned();
+    let patch_b_arg = patch_b.to_string_lossy().into_owned();
+    let parsed = parse_json(&["merge-patches", &patch_a_arg, &patch_b_arg, "--base", &file_arg, "--json"]);
+
+    assert_eq!(parsed["conflicts"].as_array().unwrap().len(), 1);
+    assert_eq!(parsed["conflicts"][0]["patch_a_op"], 1);
+    assert_eq!(parsed["conflicts"][0]["patch_b_op"], 1);
+    assert_eq!(parsed["merged_patch"]["ops"].as_array().unwrap().len(), 1);
+    assert_eq!(parsed["merged_patch"]["ops"][0]["content"], "DELTA");
+}
+
+#[test]
+fn merge_patches_pretty_reports_conflicts() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor2 = anchor_from_file(&file_arg, 2);
+    let patch_a = tmpfile(&format!("{{\"file\":{:?},\"ops\":[{{\"op\":\"edit\",\"anchor\":{:?},\"content\":\"BETA\"}}]}}", file_arg, anchor2));
+    let patch_b = tmpfile(&format!("{{\"file\":{:?},\"ops\":[{{\"op\":\"delete\",\"anchor\":{:?}}}]}}", file_arg, anchor2));
+    let patch_a_arg = patch_a.to_string_lossy().into_owned();
+    let patch_b_arg = patch_b.to_string_lossy().into_owned();
+    let (stdout, stderr, code) = run_linehash(&["merge-patches", &patch_a_arg, &patch_b_arg, "--base", &file_arg]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("CONFLICT: op 1 in patch A and op 1 in patch B both target"));
+    assert!(stdout.contains("Merged non-conflicting ops:"));
+}
+
+#[test]
 fn stats_pretty_output_reports_summary_fields() {
     let file = tmpfile("alpha\nbeta\ngamma\n");
     let file_arg = file.to_string_lossy().into_owned();

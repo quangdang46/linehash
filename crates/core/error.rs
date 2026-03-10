@@ -85,6 +85,9 @@ pub enum LinehashError {
     #[error("diff targets '{diff_file}' but file argument is '{given_file}'")]
     DiffFileMismatch { diff_file: String, given_file: String },
 
+    #[error("explode target '{path}' already exists — use --force to overwrite it")]
+    ExplodeTargetExists { path: String },
+
     #[error("patch failed at operation {op_index}: {reason}")]
     PatchFailed { op_index: usize, reason: String },
 
@@ -156,6 +159,9 @@ impl LinehashError {
             LinehashError::DiffFileMismatch { .. } => {
                 Some("check that the diff target matches the file argument and retry")
             }
+            LinehashError::ExplodeTargetExists { .. } => {
+                Some("remove the output directory first or rerun with --force")
+            }
             LinehashError::PatchFailed { .. } => {
                 Some("fix the failing patch operation and retry the transaction")
             }
@@ -200,6 +206,7 @@ impl LinehashError {
             | LinehashError::InvalidPattern { .. }
             | LinehashError::DiffHunkMismatch { .. }
             | LinehashError::DiffFileMismatch { .. }
+            | LinehashError::ExplodeTargetExists { .. }
             | LinehashError::PatchFailed { .. }
             | LinehashError::MultiLineContentUnsupported
             | LinehashError::MutationIndexOutOfBounds { .. }
@@ -274,6 +281,9 @@ mod tests {
             LinehashError::DiffFileMismatch {
                 diff_file: "a/demo.txt".into(),
                 given_file: "demo.txt".into(),
+            },
+            LinehashError::ExplodeTargetExists {
+                path: "out/dir".into(),
             },
             LinehashError::PatchFailed {
                 op_index: 1,

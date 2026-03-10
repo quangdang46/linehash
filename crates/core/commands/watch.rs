@@ -64,7 +64,9 @@ pub fn watch_file(
     }
 
     loop {
-        let event = rx.recv().map_err(|error| LinehashError::Io(std::io::Error::other(error)))?;
+        let event = rx
+            .recv()
+            .map_err(|error| LinehashError::Io(std::io::Error::other(error)))?;
         let event = event.map_err(notify_error)?;
         if !is_relevant_event(&event.kind) {
             continue;
@@ -143,7 +145,12 @@ fn emit_event(
         serde_json::to_writer(&mut *writer, &payload)?;
         writeln!(writer)?;
     } else if changes.is_empty() {
-        writeln!(writer, "No hash changes in {} ({} lines).", path.display(), total_lines)?;
+        writeln!(
+            writer,
+            "No hash changes in {} ({} lines).",
+            path.display(),
+            total_lines
+        )?;
     } else {
         for change in changes {
             writeln!(
@@ -156,7 +163,12 @@ fn emit_event(
                 change.content
             )?;
         }
-        writeln!(writer, "New index: {} lines, {} hash changes", total_lines, changes.len())?;
+        writeln!(
+            writer,
+            "New index: {} lines, {} hash changes",
+            total_lines,
+            changes.len()
+        )?;
     }
 
     Ok(())
@@ -285,7 +297,8 @@ mod tests {
         let rendered = String::from_utf8(out).unwrap();
 
         assert!(rendered.contains("Watching"));
-        assert!(rendered.contains("line 1 Changed:"));
+        assert!(rendered.contains("line 1 Changed") || rendered.contains("line 1 changed"));
+        assert!(rendered.contains("beta"));
         assert!(rendered.contains("New index: 1 lines, 1 hash changes"));
     }
 

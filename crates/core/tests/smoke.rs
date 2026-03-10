@@ -413,7 +413,10 @@ fn edit_ambiguous_hash_rejects_without_changing_file() {
     assert_eq!(code, 1);
     assert!(stderr.contains("matches 2 lines"));
     assert!(stderr.contains("use a line-qualified hash"));
-    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{first}\nunique\n{second}\n"));
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        format!("{first}\nunique\n{second}\n")
+    );
 }
 
 #[test]

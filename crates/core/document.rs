@@ -131,11 +131,11 @@ impl Document {
     }
 
     pub fn compute_stats(&self) -> FileStats {
-        let index = self.build_index();
+        let bucket_counts = count_short_hashes(&self.lines);
+        let index = build_index_from_counts(&self.lines, &bucket_counts);
         let mut collision_pairs = collect_collision_pairs(&index);
         collision_pairs.sort_unstable();
-
-        let (unique_hashes, collision_count) = summarize_buckets(&index);
+        let (unique_hashes, collision_count) = summarize_bucket_counts(&bucket_counts);
 
         FileStats {
             line_count: self.len(),
@@ -256,17 +256,40 @@ fn empty_index() -> ShortHashIndex {
     vec![Vec::new(); 256]
 }
 
-fn summarize_buckets(index: &ShortHashIndex) -> (usize, usize) {
+fn count_short_hashes(lines: &[LineRecord]) -> [usize; 256] {
+    let mut counts = [0; 256];
+    for line in lines {
+        counts[line.short_hash as usize] += 1;
+    }
+    counts
+}
+
+fn build_index_from_counts(lines: &[LineRecord], counts: &[usize; 256]) -> ShortHashIndex {
+    let mut index = empty_index();
+    for (bucket, count) in counts.iter().enumerate() {
+        if *count > 0 {
+            index[bucket] = Vec::with_capacity(*count);
+        }
+    }
+
+    for (line_index, line) in lines.iter().enumerate() {
+        index[line.short_hash as usize].push(line_index);
+    }
+
+    index
+}
+
+fn summarize_bucket_counts(counts: &[usize; 256]) -> (usize, usize) {
     let mut unique_hashes = 0;
     let mut collision_count = 0;
 
-    for positions in index {
-        if positions.is_empty() {
+    for count in counts {
+        if *count == 0 {
             continue;
         }
         unique_hashes += 1;
-        if positions.len() >= 2 {
-            collision_count += positions.len();
+        if *count >= 2 {
+            collision_count += *count;
         }
     }
 

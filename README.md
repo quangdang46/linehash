@@ -59,11 +59,11 @@ If the file changed since last read, hashes won't match → edit **rejected** be
 
 ## How Hashes Work
 
-Each hash is a **2-char truncated xxHash** of the line content (trimmed):
+Each hash is a **2-char truncated xxHash** of the raw line content:
 
 ```
-line content → xxhash32 → take first 2 hex chars
-"  return decoded" → 0x9c4f... → "9c"
+line content → xxhash32 → take low byte as 2 hex chars
+"  return decoded" → 0x...9c → "9c"
 ```
 
 - Same content = same hash (stable across reads)

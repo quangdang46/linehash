@@ -1168,6 +1168,71 @@ fn indent_receipt_reports_modified_lines() {
 }
 
 #[test]
+fn find_block_brace_fixture_returns_brace_balanced_range() {
+    let fixture = fixture_path("brace_balanced.rs");
+    let fixture_arg = fixture.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&fixture_arg, 3);
+    let (stdout, stderr, code) = run_linehash(&["find-block", &fixture_arg, &anchor]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Block: 1:"));
+    assert!(stdout.contains("..5:"));
+    assert!(stdout.contains("(5 lines — brace-balanced)"));
+}
+
+#[test]
+fn find_block_indent_fixture_returns_indent_range() {
+    let fixture = fixture_path("indent_python.py");
+    let fixture_arg = fixture.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&fixture_arg, 3);
+    let (stdout, stderr, code) = run_linehash(&["find-block", &fixture_arg, &anchor]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Block: 1:"));
+    assert!(stdout.contains("..3:"));
+    assert!(stdout.contains("(3 lines — indent-delimited)"));
+}
+
+#[test]
+fn find_block_json_output_is_structured() {
+    let fixture = fixture_path("brace_balanced.rs");
+    let fixture_arg = fixture.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&fixture_arg, 2);
+    let parsed = parse_json(&["find-block", &fixture_arg, &anchor, "--json"]);
+
+    assert!(parsed["start"].as_str().unwrap().starts_with("1:"));
+    assert!(parsed["end"].as_str().unwrap().starts_with("5:"));
+    assert_eq!(parsed["line_count"], 5);
+    assert_eq!(parsed["language"], "brace");
+}
+
+#[test]
+fn find_block_unbalanced_braces_returns_error() {
+    let file = tmpfile("fn main() {\n    if true {\n        println!(\"oops\");\n}\n");
+    let file_arg = format!("{}.rs", file.to_string_lossy());
+    std::fs::rename(&file, &file_arg).unwrap();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&["find-block", &file_arg, &anchor]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("could not find balanced block boundary"));
+}
+
+#[test]
+fn find_block_unknown_extension_with_mixed_heuristics_is_ambiguous() {
+    let file = tmpfile("outer:\n  if true {\n    value\n  }\n");
+    let file_arg = format!("{}.txt", file.to_string_lossy());
+    std::fs::rename(&file, &file_arg).unwrap();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&["find-block", &file_arg, &anchor, "--json"]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("block language is ambiguous"));
+}
+
+#[test]
 fn stats_pretty_output_reports_summary_fields() {
     let file = tmpfile("alpha\nbeta\ngamma\n");
     let file_arg = file.to_string_lossy().into_owned();

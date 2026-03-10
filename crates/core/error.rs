@@ -70,6 +70,12 @@ pub enum LinehashError {
     #[error("range uses mixed indentation styles (spaces and tabs) at line {line_no}")]
     MixedIndentation { line_no: usize },
 
+    #[error("could not find balanced block boundary from line {line_no} — check for unmatched braces")]
+    UnbalancedBlock { line_no: usize },
+
+    #[error("block language is ambiguous at line {line_no} — use an explicit range anchor instead")]
+    AmbiguousBlockLanguage { line_no: usize },
+
     #[error("invalid pattern '{pattern}': {message}")]
     InvalidPattern { pattern: String, message: String },
 
@@ -137,6 +143,12 @@ impl LinehashError {
             LinehashError::MixedIndentation { .. } => {
                 Some("normalize indentation in the target range before retrying the command")
             }
+            LinehashError::UnbalancedBlock { .. } => {
+                Some("check the surrounding braces or block delimiters and retry on a well-formed file")
+            }
+            LinehashError::AmbiguousBlockLanguage { .. } => {
+                Some("rename the file to a supported extension or pass an explicit range instead")
+            }
             LinehashError::InvalidPattern { .. } => Some("fix the pattern syntax and try again"),
             LinehashError::DiffHunkMismatch { .. } => {
                 Some("re-generate the diff from the current file and retry the command")
@@ -183,6 +195,8 @@ impl LinehashError {
             | LinehashError::InvalidIndentRange { .. }
             | LinehashError::IndentUnderflow { .. }
             | LinehashError::MixedIndentation { .. }
+            | LinehashError::UnbalancedBlock { .. }
+            | LinehashError::AmbiguousBlockLanguage { .. }
             | LinehashError::InvalidPattern { .. }
             | LinehashError::DiffHunkMismatch { .. }
             | LinehashError::DiffFileMismatch { .. }
@@ -250,6 +264,8 @@ mod tests {
                 kind: "spaces",
             },
             LinehashError::MixedIndentation { line_no: 3 },
+            LinehashError::UnbalancedBlock { line_no: 8 },
+            LinehashError::AmbiguousBlockLanguage { line_no: 5 },
             LinehashError::InvalidPattern {
                 pattern: "(".into(),
                 message: "unclosed group".into(),

@@ -100,17 +100,17 @@ fn notify_error(error: notify::Error) -> LinehashError {
 }
 
 fn is_relevant_event(kind: &EventKind) -> bool {
-    match kind {
+    matches!(
+        kind,
         EventKind::Modify(ModifyKind::Data(_))
-        | EventKind::Modify(ModifyKind::Any)
-        | EventKind::Modify(ModifyKind::Name(_))
-        | EventKind::Create(CreateKind::Any)
-        | EventKind::Create(CreateKind::File)
-        | EventKind::Remove(RemoveKind::Any)
-        | EventKind::Remove(RemoveKind::File) => true,
-        EventKind::Any => true,
-        _ => false,
-    }
+            | EventKind::Modify(ModifyKind::Any)
+            | EventKind::Modify(ModifyKind::Name(_))
+            | EventKind::Create(CreateKind::Any)
+            | EventKind::Create(CreateKind::File)
+            | EventKind::Remove(RemoveKind::Any)
+            | EventKind::Remove(RemoveKind::File)
+            | EventKind::Any
+    )
 }
 
 fn event_targets_path(paths: &[std::path::PathBuf], target: &Path) -> bool {

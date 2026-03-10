@@ -192,12 +192,12 @@ fn resolve_qualified(
         })
         .unwrap_or_default();
     Err(LinehashError::StaleAnchor {
-        anchor: format!("{line}:{short}"),
+        anchor: format!("{line}:{short}").into_boxed_str(),
         line,
-        expected: short.to_owned(),
-        actual: actual.short_hash.clone(),
-        path,
-        relocated_suffix,
+        expected: short.to_owned().into_boxed_str(),
+        actual: actual.short_hash.clone().into_boxed_str(),
+        path: path.into_boxed_str(),
+        relocated_suffix: relocated_suffix.into_boxed_str(),
     })
 }
 

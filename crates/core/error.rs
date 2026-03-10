@@ -43,12 +43,12 @@ pub enum LinehashError {
         "line {line} content changed since last read in {path} (expected hash {expected}, got {actual}){relocated_suffix}"
     )]
     StaleAnchor {
-        anchor: String,
+        anchor: Box<str>,
         line: usize,
-        expected: String,
-        actual: String,
-        path: String,
-        relocated_suffix: String,
+        expected: Box<str>,
+        actual: Box<str>,
+        path: Box<str>,
+        relocated_suffix: Box<str>,
     },
 
     #[error("file '{path}' changed since the last read")]
@@ -88,6 +88,18 @@ pub enum LinehashError {
 
     #[error("explode target '{path}' already exists — use --force to overwrite it")]
     ExplodeTargetExists { path: String },
+
+    #[error("implode directory '{path}' is missing .meta.json")]
+    ImplodeMissingMeta { path: String },
+
+    #[error("implode metadata in '{path}' is invalid: {reason}")]
+    ImplodeInvalidMeta { path: String, reason: String },
+
+    #[error("implode directory '{path}' contains unexpected entry '{entry}'")]
+    ImplodeDirtyDirectory { path: String, entry: String },
+
+    #[error("implode directory '{path}' is missing line file for line {line_no}")]
+    ImplodeMissingLineFile { path: String, line_no: usize },
 
     #[error("patch failed at operation {op_index}: {reason}")]
     PatchFailed { op_index: usize, reason: String },
@@ -163,6 +175,18 @@ impl LinehashError {
             LinehashError::ExplodeTargetExists { .. } => {
                 Some("remove the output directory first or rerun with --force")
             }
+            LinehashError::ImplodeMissingMeta { .. } => {
+                Some("run `linehash explode <file> --out <dir>` first or restore the missing .meta.json")
+            }
+            LinehashError::ImplodeInvalidMeta { .. } => {
+                Some("recreate the exploded directory from a fresh `linehash explode` and retry")
+            }
+            LinehashError::ImplodeDirtyDirectory { .. } => {
+                Some("remove unexpected files from the explode directory and retry the implode")
+            }
+            LinehashError::ImplodeMissingLineFile { .. } => {
+                Some("restore the missing line file or regenerate the explode directory before retrying")
+            }
             LinehashError::PatchFailed { .. } => {
                 Some("fix the failing patch operation and retry the transaction")
             }
@@ -208,6 +232,10 @@ impl LinehashError {
             | LinehashError::DiffHunkMismatch { .. }
             | LinehashError::DiffFileMismatch { .. }
             | LinehashError::ExplodeTargetExists { .. }
+            | LinehashError::ImplodeMissingMeta { .. }
+            | LinehashError::ImplodeInvalidMeta { .. }
+            | LinehashError::ImplodeDirtyDirectory { .. }
+            | LinehashError::ImplodeMissingLineFile { .. }
             | LinehashError::PatchFailed { .. }
             | LinehashError::MultiLineContentUnsupported
             | LinehashError::MutationIndexOutOfBounds { .. }
@@ -257,7 +285,7 @@ mod tests {
                 expected: "aa".into(),
                 actual: "bb".into(),
                 path: "demo.txt".into(),
-                relocated_suffix: String::new(),
+                relocated_suffix: "".into(),
             },
             LinehashError::StaleFile {
                 path: "demo.txt".into(),
@@ -286,6 +314,21 @@ mod tests {
             },
             LinehashError::ExplodeTargetExists {
                 path: "out/dir".into(),
+            },
+            LinehashError::ImplodeMissingMeta {
+                path: "out/dir".into(),
+            },
+            LinehashError::ImplodeInvalidMeta {
+                path: "out/dir/.meta.json".into(),
+                reason: "missing newline".into(),
+            },
+            LinehashError::ImplodeDirtyDirectory {
+                path: "out/dir".into(),
+                entry: "notes.txt".into(),
+            },
+            LinehashError::ImplodeMissingLineFile {
+                path: "out/dir".into(),
+                line_no: 2,
             },
             LinehashError::PatchFailed {
                 op_index: 1,
@@ -332,5 +375,32 @@ mod tests {
             )
         );
         assert!(error.to_string().contains("hash still exists at line(s) 9"));
+    }
+
+    #[test]
+    fn implode_errors_have_recovery_hints() {
+        assert!(LinehashError::ImplodeMissingMeta {
+            path: "out".into()
+        }
+        .hint()
+        .is_some());
+        assert!(LinehashError::ImplodeInvalidMeta {
+            path: "out/.meta.json".into(),
+            reason: "bad".into()
+        }
+        .hint()
+        .is_some());
+        assert!(LinehashError::ImplodeDirtyDirectory {
+            path: "out".into(),
+            entry: "notes.txt".into()
+        }
+        .hint()
+        .is_some());
+        assert!(LinehashError::ImplodeMissingLineFile {
+            path: "out".into(),
+            line_no: 2
+        }
+        .hint()
+        .is_some());
     }
 }

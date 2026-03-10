@@ -97,11 +97,16 @@ struct IndentSummary {
 
 impl IndentSummary {
     fn success_message(&self) -> String {
-        let action = match self.change {
-            IndentChange::Indent(amount) => format!("Indented lines {}-{} by {} spaces.", self.start_line, self.end_line, amount),
-            IndentChange::Dedent(amount) => format!("Dedented lines {}-{} by {} spaces.", self.start_line, self.end_line, amount),
-        };
-        action
+        match self.change {
+            IndentChange::Indent(amount) => format!(
+                "Indented lines {}-{} by {} spaces.",
+                self.start_line, self.end_line, amount
+            ),
+            IndentChange::Dedent(amount) => format!(
+                "Dedented lines {}-{} by {} spaces.",
+                self.start_line, self.end_line, amount
+            ),
+        }
     }
 }
 

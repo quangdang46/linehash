@@ -71,7 +71,7 @@ fn flag_mode(json: bool) -> OutputMode {
 #[cfg(test)]
 mod tests {
     use super::{OutputMode, output_mode_for};
-    use crate::cli::{Commands, DeleteCmd, EditCmd, ExplodeCmd, IndentCmd, InsertCmd, ReadCmd, WatchCmd};
+    use crate::cli::{Commands, DeleteCmd, EditCmd, ExplodeCmd, ImplodeCmd, IndentCmd, InsertCmd, ReadCmd, WatchCmd};
     use std::path::PathBuf;
 
     #[test]
@@ -109,6 +109,17 @@ mod tests {
             file: PathBuf::from("demo.txt"),
             out: PathBuf::from("out"),
             force: false,
+        });
+
+        assert_eq!(output_mode_for(&command), OutputMode::Pretty);
+    }
+
+    #[test]
+    fn implode_defaults_to_pretty_mode() {
+        let command = Commands::Implode(ImplodeCmd {
+            dir: PathBuf::from("exploded"),
+            out: PathBuf::from("demo.txt"),
+            dry_run: true,
         });
 
         assert_eq!(output_mode_for(&command), OutputMode::Pretty);

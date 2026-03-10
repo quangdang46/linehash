@@ -1396,6 +1396,63 @@ fn stats_reports_collision_pairs_for_collision_file() {
 }
 
 #[test]
+fn implode_round_trips_exploded_file() {
+    let file = tmpfile("alpha\r\nbeta\r\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let exploded = tempfile::TempDir::new().unwrap();
+    let exploded_arg = exploded.path().to_string_lossy().into_owned();
+    let restored = tmpfile("");
+    let restored_arg = restored.to_string_lossy().into_owned();
+
+    let (_stdout, stderr, code) = run_linehash(&["explode", &file_arg, "--out", &exploded_arg]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    let (stdout, stderr, code) = run_linehash(&["implode", &exploded_arg, "--out", &restored_arg]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Imploded 2 line files into"));
+    assert_eq!(fs::read(&restored).unwrap(), fs::read(&file).unwrap());
+}
+
+#[test]
+fn implode_dry_run_reports_without_writing_file() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let exploded = tempfile::TempDir::new().unwrap();
+    let exploded_arg = exploded.path().to_string_lossy().into_owned();
+    let restored = tmpfile("original\n");
+    let restored_arg = restored.to_string_lossy().into_owned();
+
+    let (_stdout, stderr, code) = run_linehash(&["explode", &file_arg, "--out", &exploded_arg]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    let (stdout, stderr, code) = run_linehash(&["implode", &exploded_arg, "--out", &restored_arg, "--dry-run"]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would implode 2 line files into"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&restored).unwrap(), "original\n");
+}
+
+#[test]
+fn implode_rejects_dirty_directory() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let exploded = tempfile::TempDir::new().unwrap();
+    let exploded_arg = exploded.path().to_string_lossy().into_owned();
+    let restored = tmpfile("");
+    let restored_arg = restored.to_string_lossy().into_owned();
+
+    let (_stdout, stderr, code) = run_linehash(&["explode", &file_arg, "--out", &exploded_arg]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    fs::write(exploded.path().join("notes.txt"), "oops").unwrap();
+
+    let (_stdout, stderr, code) = run_linehash(&["implode", &exploded_arg, "--out", &restored_arg]);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("contains unexpected entry 'notes.txt'"));
+}
+
+#[test]
 fn helper_tmpfile_writes_expected_content() {
     let file = tmpfile("alpha\nbeta\n");
     let contents = std::fs::read_to_string(&file).unwrap();

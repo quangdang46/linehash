@@ -293,11 +293,11 @@ fn emit_block(
 ) -> Result<(), LinehashError> {
     let shared = removed.len().min(added.len());
 
-    for offset in 0..shared {
+    for (offset, content) in added.iter().enumerate().take(shared) {
         let line = doc_line(doc, start + offset)?;
         ops.push(PatchOp::Edit {
             anchor: format!("{}:{}", line.number, line.short_hash),
-            content: added[offset].clone(),
+            content: content.clone(),
         });
     }
 

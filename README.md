@@ -100,6 +100,14 @@ linehash read src/auth.js --anchor 2:f1 --context 2
 # View just line numbers + hashes (no content) — for orientation
 linehash index src/auth.js
 
+# Check whether one or more anchors still resolve
+linehash verify src/auth.js 2:f1 4:9c
+
+# Search content and return anchors for matching lines
+linehash grep src/auth.js "verifyToken"
+linehash annotate src/auth.js "missing expiry"
+linehash annotate src/auth.js "^export function" --regex --expect-one
+
 # Edit by hash anchor
 linehash edit <file> <hash-or-line:hash> <new_content>
 linehash edit <file> <start-line:hash>..<end-line:hash> <new_content>
@@ -107,12 +115,28 @@ linehash insert <file> <hash-or-line:hash> <new_line>     # insert AFTER anchor 
 linehash insert <file> <hash-or-line:hash> <new_line> --before
 linehash delete <file> <hash-or-line:hash>
 
+# Structural mutations
+linehash swap <file> <anchor-a> <anchor-b>
+linehash move <file> <anchor> before <target-anchor>
+linehash move <file> <anchor> after <target-anchor>
+linehash indent <file> <start-line:hash>..<end-line:hash> +2
+linehash find-block <file> <anchor>
+
+# Multi-op workflows
+linehash patch <file> <patch.json>
+linehash from-diff <file> <diff.patch>
+linehash merge-patches <patch-a.json> <patch-b.json> --base <file>
+
 # Inspect collision/token-budget guidance for large files
 linehash stats src/auth.js
 
 # Watch for live hash changes (v1 defaults to one change event, then exit)
 linehash watch src/auth.js
 linehash watch src/auth.js --continuous
+
+# Explode / implode workflow
+linehash explode src/auth.js --out out/auth.lines
+linehash implode out/auth.lines --out src/auth.js --dry-run
 ```
 
 ## Integration with Claude Code
@@ -141,7 +165,12 @@ Example:
 - Use `read` for the full file view.
 - Use `read --anchor ... --context N` when you already know the target anchor and want a smaller local window.
 - Use `index` for fast orientation when content is not needed.
+- Use `verify` to confirm anchors still resolve before building a larger edit plan.
+- Use `grep` / `annotate` when you know content but need current anchors.
+- Use `swap`, `move`, `indent`, and `find-block` instead of simulating structural edits with multiple fragile single-line operations.
+- Use `patch`, `from-diff`, and `merge-patches` for multi-step or reviewable change sets.
 - Use `stats` when a file is large, collisions are likely, or you want guidance on whether short hashes and small context windows are still ergonomic.
+- Use `explode` / `implode` only when you explicitly want a filesystem-native round-trip workflow.
 - Use qualified anchors like `12:ab` whenever possible; they are safer than bare `ab` when collisions or stale reads matter.
 
 ## Output Modes
@@ -174,6 +203,21 @@ linehash watch src/auth.js --json
 {"timestamp":1714001321,"event":"changed","path":"src/auth.js","changes":[...],"total_lines":847}
 ```
 
+## Additional Commands
+
+- `verify` checks whether anchors still resolve and returns a non-zero exit code if any do not.
+- `grep` searches by regex and returns anchor-addressed matches.
+- `annotate` maps exact substrings or regex matches back to current anchors.
+- `patch` applies a JSON patch transaction atomically.
+- `swap` exchanges two lines in one snapshot-safe operation.
+- `move` repositions one line before or after another anchor.
+- `indent` indents or dedents an anchor-qualified range.
+- `find-block` discovers a likely structural block around an anchor.
+- `from-diff` compiles a unified diff into linehash patch JSON.
+- `merge-patches` merges two patch files and reports conflicts.
+- `explode` writes one file per source line plus metadata.
+- `implode` validates and reassembles an exploded directory back into a file.
+
 ## Error Handling
 
 ```bash
@@ -200,7 +244,7 @@ Hint: re-read the file metadata and retry with fresh --expect-mtime/--expect-ino
 
 ## Recovery loops
 
-- **Stale anchor:** re-run `linehash read <file>` or `linehash read <file> --json`, then retry with a fresh `line:hash` anchor.
+- **Stale anchor:** re-run `linehash read <file>` or `linehash read <file> --json`; if the error reports relocated line(s), use those to rebuild a fresh qualified anchor before retrying.
 - **Ambiguous hash:** switch from bare `ab` to qualified `12:ab`.
 - **Large file / too much output:** use `index`, `stats`, or `read --anchor ... --context N` instead of a full read.
 - **Concurrent edits:** treat a stale-anchor or stale-file rejection as success of the safety system, not as something to bypass.

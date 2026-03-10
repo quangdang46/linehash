@@ -127,7 +127,7 @@ fn validate_patch_target(patch: &PatchFile, base: &Path) -> Result<(), LinehashE
 fn resolve_patch_ops(
     patch: &PatchFile,
     base: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
     _source: &'static str,
 ) -> Result<Vec<ResolvedOp>, LinehashError> {
     let mut resolved = Vec::with_capacity(patch.ops.len());
@@ -154,7 +154,7 @@ fn resolve_patch_ops(
 fn resolve_edit_target(
     anchor: &str,
     base: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
     op_index: usize,
 ) -> Result<(TargetKind, String), LinehashError> {
     if let Ok(range) = parse_range(anchor) {
@@ -177,7 +177,7 @@ fn resolve_insert_target(
     anchor: &str,
     before: bool,
     base: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
     op_index: usize,
 ) -> Result<(TargetKind, String), LinehashError> {
     let parsed = parse_anchor(anchor).map_err(|error| patch_error(op_index, error))?;
@@ -197,7 +197,7 @@ fn resolve_insert_target(
 fn resolve_delete_target(
     anchor: &str,
     base: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
     op_index: usize,
 ) -> Result<(TargetKind, String), LinehashError> {
     let parsed = parse_anchor(anchor).map_err(|error| patch_error(op_index, error))?;

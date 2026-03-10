@@ -192,7 +192,7 @@ fn validate_patch_target(patch: &PatchFile, file: &std::path::Path) -> Result<()
 fn build_plan(
     patch: &PatchFile,
     original: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
 ) -> Result<Vec<PlannedOp>, LinehashError> {
     let mut plan = Vec::with_capacity(patch.ops.len());
     let mut occupied = vec![None; original.lines.len()];
@@ -216,7 +216,7 @@ fn resolve_edit(
     op_index: usize,
     edit: &EditOp,
     original: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
     occupied: &mut [Option<Occupancy>],
 ) -> Result<PlannedOp, LinehashError> {
     validate_single_line_content(&edit.content).map_err(|error| patch_error(op_index, error))?;
@@ -258,7 +258,7 @@ fn resolve_insert(
     op_index: usize,
     insert: &InsertOp,
     original: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
 ) -> Result<PlannedOp, LinehashError> {
     validate_single_line_content(&insert.content).map_err(|error| patch_error(op_index, error))?;
     let anchor = parse_anchor(&insert.anchor).map_err(|error| patch_error(op_index, error))?;
@@ -283,7 +283,7 @@ fn resolve_delete(
     op_index: usize,
     delete: &DeleteOp,
     original: &Document,
-    index: &std::collections::HashMap<String, Vec<usize>>,
+    index: &crate::document::ShortHashIndex,
     occupied: &mut [Option<Occupancy>],
 ) -> Result<PlannedOp, LinehashError> {
     let anchor = parse_anchor(&delete.anchor).map_err(|error| patch_error(op_index, error))?;

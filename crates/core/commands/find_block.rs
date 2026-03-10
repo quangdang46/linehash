@@ -30,9 +30,9 @@ pub fn run<W: Write, E: Write>(
             &format!(
                 "Block: {}:{}..{}:{}  ({} lines — {})",
                 block.start_line,
-                doc.lines[block.start_index].short_hash,
+                crate::document::format_short_hash(doc.lines[block.start_index].short_hash),
                 block.end_line,
-                doc.lines[block.end_index].short_hash,
+                crate::document::format_short_hash(doc.lines[block.end_index].short_hash),
                 block.line_count(),
                 language.description(),
             ),
@@ -43,11 +43,11 @@ pub fn run<W: Write, E: Write>(
             &BlockPayload {
                 start: format!(
                     "{}:{}",
-                    block.start_line, doc.lines[block.start_index].short_hash
+                    block.start_line, crate::document::format_short_hash(doc.lines[block.start_index].short_hash)
                 ),
                 end: format!(
                     "{}:{}",
-                    block.end_line, doc.lines[block.end_index].short_hash
+                    block.end_line, crate::document::format_short_hash(doc.lines[block.end_index].short_hash)
                 ),
                 line_count: block.line_count(),
                 language: language.name(),

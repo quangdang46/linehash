@@ -144,7 +144,7 @@ mod tests {
     fn line_anchor(content: &str, line_no: usize) -> String {
         let doc = Document::from_str(Path::new("demo.txt"), content).unwrap();
         let line = &doc.lines[line_no - 1];
-        format!("{}:{}", line_no, line.short_hash)
+        format!("{}:{}", line_no, crate::document::format_short_hash(line.short_hash))
     }
 
     #[test]

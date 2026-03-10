@@ -45,7 +45,7 @@ pub fn explode(source: &Path, out_dir: &Path, force: bool) -> Result<ExplodeRepo
     let doc = Document::load(source)?;
 
     for line in &doc.lines {
-        let path = out_dir.join(format_filename(line.number, &line.short_hash));
+        let path = out_dir.join(format_filename(line.number, line.short_hash));
         fs::write(path, &line.content)?;
     }
 
@@ -85,8 +85,8 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<(), LinehashError> 
     Ok(())
 }
 
-fn format_filename(line_no: usize, short_hash: &str) -> String {
-    format!("{line_no:04}_{short_hash}.txt")
+fn format_filename(line_no: usize, short_hash: crate::hash::ShortHash) -> String {
+    format!("{line_no:04}_{}.txt", crate::document::format_short_hash(short_hash))
 }
 
 fn newline_name(newline: NewlineStyle) -> &'static str {
@@ -117,19 +117,19 @@ mod tests {
 
         assert_eq!(report.file_count, 2);
         assert_eq!(
-            fs::read_to_string(out.join(format_filename(1, &doc.lines[0].short_hash))).unwrap(),
+            fs::read_to_string(out.join(format_filename(1, doc.lines[0].short_hash))).unwrap(),
             "alpha"
         );
         assert_eq!(
-            fs::read_to_string(out.join(format_filename(2, &doc.lines[1].short_hash))).unwrap(),
+            fs::read_to_string(out.join(format_filename(2, doc.lines[1].short_hash))).unwrap(),
             "beta"
         );
     }
 
     #[test]
     fn test_explode_filename_format() {
-        assert_eq!(format_filename(7, "a3"), "0007_a3.txt");
-        assert_eq!(format_filename(12345, "ff"), "12345_ff.txt");
+        assert_eq!(format_filename(7, 0xa3), "0007_a3.txt");
+        assert_eq!(format_filename(12345, 0xff), "12345_ff.txt");
     }
 
     #[test]
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(report.file_count, 1);
         assert!(!out.join("stale.txt").exists());
         assert!(
-            out.join(format_filename(1, &doc.lines[0].short_hash))
+            out.join(format_filename(1, doc.lines[0].short_hash))
                 .exists()
         );
     }
@@ -211,11 +211,11 @@ mod tests {
         let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
 
         assert_eq!(
-            fs::read(out.join(format_filename(1, &doc.lines[0].short_hash))).unwrap(),
+            fs::read(out.join(format_filename(1, doc.lines[0].short_hash))).unwrap(),
             b"alpha"
         );
         assert_eq!(
-            fs::read(out.join(format_filename(2, &doc.lines[1].short_hash))).unwrap(),
+            fs::read(out.join(format_filename(2, doc.lines[1].short_hash))).unwrap(),
             b"beta"
         );
     }
@@ -239,8 +239,8 @@ mod tests {
             files,
             vec![
                 ".meta.json".to_string(),
-                format_filename(1, &doc.lines[0].short_hash),
-                format_filename(2, &doc.lines[1].short_hash),
+                format_filename(1, doc.lines[0].short_hash),
+                format_filename(2, doc.lines[1].short_hash),
             ]
         );
     }

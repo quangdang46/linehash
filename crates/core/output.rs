@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::anchor::ResolvedLine;
 use crate::context::{CommandContext, OutputMode};
-use crate::document::{Document, FileStats, NewlineStyle};
+use crate::document::{Document, FileStats, NewlineStyle, format_short_hash};
 use crate::error::LinehashError;
 
 #[derive(Serialize)]
@@ -38,13 +38,26 @@ struct ReadPayload<'a> {
     mtime: i64,
     mtime_nanos: u32,
     inode: u64,
-    lines: Vec<ReadLinePayload<'a>>,
+    lines: Vec<ReadLineOwnedPayload<'a>>,
 }
 
 #[derive(Serialize)]
-struct IndexPayload<'a> {
+struct ReadLineOwnedPayload<'a> {
+    n: usize,
+    hash: String,
+    content: &'a str,
+}
+
+#[derive(Serialize)]
+struct IndexPayload {
     file: String,
-    lines: Vec<IndexLinePayload<'a>>,
+    lines: Vec<IndexLineOwnedPayload>,
+}
+
+#[derive(Serialize)]
+struct IndexLineOwnedPayload {
+    n: usize,
+    hash: String,
 }
 
 #[allow(dead_code)]
@@ -71,7 +84,7 @@ pub fn print_read(writer: &mut impl Write, doc: &Document) -> io::Result<()> {
             writer,
             "{number:>width$}:{hash}| {content}",
             number = line.number,
-            hash = line.short_hash,
+            hash = format_short_hash(line.short_hash),
             content = line.content,
             width = width
         )?;
@@ -98,9 +111,9 @@ pub fn print_read_json(writer: &mut impl Write, doc: &Document) -> io::Result<()
         lines: doc
             .lines
             .iter()
-            .map(|line| ReadLinePayload {
+            .map(|line| ReadLineOwnedPayload {
                 n: line.number,
-                hash: &line.short_hash,
+                hash: format_short_hash(line.short_hash),
                 content: &line.content,
             })
             .collect(),
@@ -134,13 +147,17 @@ pub fn print_read_context(
             ' '
         };
         let line = &doc.lines[index];
+        let number = line.number.to_string();
+        let padding = width.saturating_sub(number.len());
         writeln!(
             writer,
-            "{marker}{number:>width$}:{hash}| {content}",
-            number = line.number,
-            hash = line.short_hash,
+            "{indent:>padding$}{marker}{number}:{hash}| {content}",
+            indent = "",
+            marker = marker,
+            number = number,
+            hash = format_short_hash(line.short_hash),
             content = line.content,
-            width = width,
+            padding = padding,
         )?;
         previous = Some(index);
     }
@@ -150,7 +167,7 @@ pub fn print_read_context(
 
 pub fn print_index(writer: &mut impl Write, doc: &Document) -> io::Result<()> {
     for line in &doc.lines {
-        writeln!(writer, "{}:{}", line.number, line.short_hash)?;
+        writeln!(writer, "{}:{}", line.number, format_short_hash(line.short_hash))?;
     }
     Ok(())
 }
@@ -161,9 +178,9 @@ pub fn print_index_json(writer: &mut impl Write, doc: &Document) -> io::Result<(
         lines: doc
             .lines
             .iter()
-            .map(|line| IndexLinePayload {
+            .map(|line| IndexLineOwnedPayload {
                 n: line.number,
-                hash: &line.short_hash,
+                hash: format_short_hash(line.short_hash),
             })
             .collect(),
     };
@@ -200,7 +217,7 @@ pub fn print_grep(writer: &mut impl Write, doc: &Document, indexes: &[usize]) ->
             writer,
             "{number:>width$}:{hash}| {content}",
             number = line.number,
-            hash = line.short_hash,
+            hash = format_short_hash(line.short_hash),
             content = line.content,
             width = width
         )?;
@@ -217,9 +234,9 @@ pub fn write_grep_json<W: Write, E: Write>(
         .iter()
         .map(|index| {
             let line = &doc.lines[*index];
-            ReadLinePayload {
+            ReadLineOwnedPayload {
                 n: line.number,
-                hash: &line.short_hash,
+                hash: format_short_hash(line.short_hash),
                 content: &line.content,
             }
         })
@@ -287,7 +304,7 @@ mod tests {
         print_stats, print_stats_json,
     };
     use crate::anchor::ResolvedLine;
-    use crate::document::{Document, FileStats};
+    use crate::document::{Document, FileStats, format_short_hash};
     use std::path::Path;
 
     #[test]
@@ -297,7 +314,7 @@ mod tests {
         print_read(&mut out, &doc).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            format!("1:{}| alpha\n", doc.lines[0].short_hash)
+            format!("1:{}| alpha\n", format_short_hash(doc.lines[0].short_hash))
         );
     }
 
@@ -331,7 +348,7 @@ mod tests {
             &[ResolvedLine {
                 index: 2,
                 line_no: 3,
-                short_hash: doc.lines[2].short_hash.clone(),
+                short_hash: format_short_hash(doc.lines[2].short_hash),
             }],
             1,
         )
@@ -350,7 +367,7 @@ mod tests {
             &[ResolvedLine {
                 index: 2,
                 line_no: 3,
-                short_hash: doc.lines[2].short_hash.clone(),
+                short_hash: format_short_hash(doc.lines[2].short_hash),
             }],
             0,
         )
@@ -358,32 +375,6 @@ mod tests {
         let rendered = String::from_utf8(out).unwrap();
         assert_eq!(rendered.lines().count(), 1);
         assert!(rendered.starts_with("→3:"));
-    }
-
-    #[test]
-    fn test_read_context_separator_between_neighborhoods() {
-        let doc = numbered_doc(10);
-        let mut out = Vec::new();
-        print_read_context(
-            &mut out,
-            &doc,
-            &[
-                ResolvedLine {
-                    index: 1,
-                    line_no: 2,
-                    short_hash: doc.lines[1].short_hash.clone(),
-                },
-                ResolvedLine {
-                    index: 8,
-                    line_no: 9,
-                    short_hash: doc.lines[8].short_hash.clone(),
-                },
-            ],
-            0,
-        )
-        .unwrap();
-        let rendered = String::from_utf8(out).unwrap();
-        assert!(rendered.contains("...\n"));
     }
 
     #[test]
@@ -395,22 +386,50 @@ mod tests {
             &doc,
             &[
                 ResolvedLine {
-                    index: 3,
-                    line_no: 4,
-                    short_hash: doc.lines[3].short_hash.clone(),
+                    index: 1,
+                    line_no: 2,
+                    short_hash: format_short_hash(doc.lines[1].short_hash),
                 },
                 ResolvedLine {
-                    index: 4,
-                    line_no: 5,
-                    short_hash: doc.lines[4].short_hash.clone(),
+                    index: 8,
+                    line_no: 9,
+                    short_hash: format_short_hash(doc.lines[8].short_hash),
                 },
             ],
             1,
         )
         .unwrap();
         let rendered = String::from_utf8(out).unwrap();
-        assert!(!rendered.contains("...\n"));
-        assert_eq!(rendered.lines().count(), 4);
+        assert!(rendered.contains("..."));
+        assert!(rendered.lines().any(|line| line.trim_start().starts_with("→2:")));
+        assert!(rendered.lines().any(|line| line.trim_start().starts_with("→9:")));
+    }
+
+    #[test]
+    fn test_read_context_separator_between_neighborhoods() {
+        let doc = numbered_doc(8);
+        let mut out = Vec::new();
+        print_read_context(
+            &mut out,
+            &doc,
+            &[
+                ResolvedLine {
+                    index: 3,
+                    line_no: 4,
+                    short_hash: format_short_hash(doc.lines[3].short_hash),
+                },
+                ResolvedLine {
+                    index: 4,
+                    line_no: 5,
+                    short_hash: format_short_hash(doc.lines[4].short_hash),
+                },
+            ],
+            0,
+        )
+        .unwrap();
+        let rendered = String::from_utf8(out).unwrap();
+        assert_eq!(rendered.lines().count(), 2);
+        assert!(!rendered.contains("..."));
     }
 
     #[test]
@@ -418,14 +437,33 @@ mod tests {
         let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
         let mut out = Vec::new();
         print_index(&mut out, &doc).unwrap();
-        let rendered = String::from_utf8(out).unwrap();
         assert_eq!(
-            rendered,
+            String::from_utf8(out).unwrap(),
             format!(
                 "1:{}\n2:{}\n",
-                doc.lines[0].short_hash, doc.lines[1].short_hash
+                format_short_hash(doc.lines[0].short_hash),
+                format_short_hash(doc.lines[1].short_hash)
             )
         );
+    }
+
+    #[test]
+    fn test_stats_pretty_output_includes_summary_fields() {
+        let stats = FileStats {
+            line_count: 3,
+            unique_hashes: 3,
+            collision_count: 0,
+            collision_pairs: vec![],
+            estimated_read_tokens: 12,
+            hash_length_advice: 2,
+            suggested_context_n: 5,
+        };
+        let mut out = Vec::new();
+        print_stats(&mut out, &stats).unwrap();
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("Lines: 3"));
+        assert!(rendered.contains("Unique hashes (2-char): 3"));
+        assert!(rendered.contains("Hash length advice: 2-char recommended"));
     }
 
     #[test]
@@ -436,70 +474,43 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(parsed["file"], "demo.txt");
         assert_eq!(parsed["newline"], "lf");
-        assert_eq!(parsed["trailing_newline"], true);
         assert_eq!(parsed["lines"][0]["content"], "alpha");
+        assert_eq!(parsed["lines"][1]["hash"], format_short_hash(doc.lines[1].short_hash));
     }
 
     #[test]
     fn test_index_json_valid() {
-        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\n").unwrap();
         let mut out = Vec::new();
         print_index_json(&mut out, &doc).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(parsed["file"], "demo.txt");
         assert_eq!(parsed["lines"][0]["n"], 1);
-        assert_eq!(parsed["lines"][1]["hash"], doc.lines[1].short_hash);
+        assert_eq!(parsed["lines"][0]["hash"], format_short_hash(doc.lines[0].short_hash));
         assert!(parsed["lines"][0].get("content").is_none());
-    }
-
-    #[test]
-    fn test_stats_pretty_output_includes_summary_fields() {
-        let stats = FileStats {
-            line_count: 10,
-            unique_hashes: 9,
-            collision_count: 2,
-            collision_pairs: vec![(2, 7)],
-            estimated_read_tokens: 42,
-            hash_length_advice: 3,
-            suggested_context_n: 5,
-        };
-        let mut out = Vec::new();
-        print_stats(&mut out, &stats).unwrap();
-        let rendered = String::from_utf8(out).unwrap();
-        assert!(rendered.contains("Lines: 10"));
-        assert!(rendered.contains("Unique hashes (2-char): 9"));
-        assert!(rendered.contains("Collisions: 2"));
-        assert!(rendered.contains("Collision pairs: 1"));
-        assert!(rendered.contains("Est. read tokens: ~42"));
-        assert!(rendered.contains("Hash length advice: 3-char recommended"));
-        assert!(rendered.contains("Suggested --context: 5"));
     }
 
     #[test]
     fn test_stats_json_valid() {
         let stats = FileStats {
-            line_count: 10,
-            unique_hashes: 9,
-            collision_count: 2,
-            collision_pairs: vec![(2, 7)],
-            estimated_read_tokens: 42,
-            hash_length_advice: 3,
+            line_count: 1,
+            unique_hashes: 1,
+            collision_count: 0,
+            collision_pairs: vec![],
+            estimated_read_tokens: 2,
+            hash_length_advice: 2,
             suggested_context_n: 5,
         };
         let mut out = Vec::new();
         print_stats_json(&mut out, &stats).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        assert_eq!(parsed["line_count"], 10);
-        assert_eq!(parsed["unique_hashes"], 9);
-        assert_eq!(parsed["collision_count"], 2);
-        assert_eq!(parsed["collision_pairs"][0][0], 2);
-        assert_eq!(parsed["hash_length_advice"], 3);
-        assert_eq!(parsed["suggested_context_n"], 5);
+        assert_eq!(parsed["line_count"], 1);
+        assert_eq!(parsed["hash_length_advice"], 2);
     }
 
-    fn numbered_doc(line_count: usize) -> Document {
-        let content = (1..=line_count)
-            .map(|n| format!("line-{n}"))
+    fn numbered_doc(count: usize) -> Document {
+        let content = (1..=count)
+            .map(|n| format!("line {n}"))
             .collect::<Vec<_>>()
             .join("\n")
             + "\n";

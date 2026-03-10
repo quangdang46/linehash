@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::cli::WatchCmd;
 use crate::context::CommandContext;
-use crate::document::Document;
+use crate::document::{Document, format_short_hash};
 use crate::error::LinehashError;
 
 pub fn run<W: Write, E: Write>(
@@ -184,8 +184,8 @@ pub fn diff_documents(old_doc: &Document, new_doc: &Document) -> Vec<HashDiff> {
                 changes.push(HashDiff {
                     line_no: index + 1,
                     kind: DiffKind::Changed,
-                    old_hash: Some(old_line.short_hash.clone()),
-                    new_hash: Some(new_line.short_hash.clone()),
+                    old_hash: Some(format_short_hash(old_line.short_hash)),
+                    new_hash: Some(format_short_hash(new_line.short_hash)),
                     content: new_line.content.clone(),
                 });
             }
@@ -194,7 +194,7 @@ pub fn diff_documents(old_doc: &Document, new_doc: &Document) -> Vec<HashDiff> {
                     line_no: index + 1,
                     kind: DiffKind::Added,
                     old_hash: None,
-                    new_hash: Some(new_line.short_hash.clone()),
+                    new_hash: Some(format_short_hash(new_line.short_hash)),
                     content: new_line.content.clone(),
                 });
             }
@@ -202,7 +202,7 @@ pub fn diff_documents(old_doc: &Document, new_doc: &Document) -> Vec<HashDiff> {
                 changes.push(HashDiff {
                     line_no: index + 1,
                     kind: DiffKind::Removed,
-                    old_hash: Some(old_line.short_hash.clone()),
+                    old_hash: Some(format_short_hash(old_line.short_hash)),
                     new_hash: None,
                     content: old_line.content.clone(),
                 });

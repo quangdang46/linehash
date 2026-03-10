@@ -7,24 +7,24 @@ Command: `cargo bench --manifest-path crates/core/Cargo.toml --bench hash_bench 
 ## Current performance state
 
 ### Hash / load
-- `hash_1k_lines`: 303.82 µs – 391.22 µs
-- `hash_10k_lines`: 3.9189 ms – 5.0265 ms
-- `hash_10k_long_lines`: 5.1561 ms – 6.0097 ms
+- `hash_1k_lines`: 131.76 µs – 142.35 µs
+- `hash_10k_lines`: 1.7847 ms – 2.0478 ms
+- `hash_10k_long_lines`: 4.8957 ms – 5.7040 ms
 
 ### Stats
-- `stats_1k_lines`: 239.23 µs – 259.99 µs
-- `stats_10k_lines`: 15.828 ms – 19.747 ms
-- `stats_collision_heavy_10k`: 73.548 ms – 87.714 ms
+- `stats_1k_lines`: 228.96 µs – 277.03 µs
+- `stats_10k_lines`: 8.2275 ms – 8.5874 ms
+- `stats_collision_heavy_10k`: 40.649 ms – 44.259 ms
 
 ### Verify
-- `verify_10_anchors`: 1.4158 ms – 1.7907 ms
-- `verify_100_anchors`: 784.99 µs – 849.79 µs
-- `verify_mixed_100_anchors`: 1.0145 ms – 1.1483 ms
+- `verify_10_anchors`: 128.77 µs – 139.10 µs
+- `verify_100_anchors`: 178.98 µs – 208.81 µs
+- `verify_mixed_100_anchors`: 402.72 µs – 606.10 µs
 
 ### Watch diff
-- `watch_diff_no_changes_10k`: 96.447 µs – 115.03 µs
-- `watch_diff_single_change_10k`: 158.31 µs – 248.45 µs
-- `watch_diff_append_100_lines_10k`: 152.14 µs – 218.58 µs
+- `watch_diff_no_changes_10k`: 22.161 µs – 26.411 µs
+- `watch_diff_single_change_10k`: 26.158 µs – 30.405 µs
+- `watch_diff_append_100_lines_10k`: 46.095 µs – 52.590 µs
 
 ## Plan targets
 
@@ -36,20 +36,20 @@ From `PLAN.md`:
 ## Assessment
 
 ### Hash / load
-- `hash_1k_lines`: passes target
-- `hash_10k_lines`: near the 5 ms target ceiling at the upper end, but still within the acceptable envelope
-- `hash_10k_long_lines`: useful stress case; slower than the documented short-line 10k case and should be treated as supplemental coverage rather than a plan threshold
+- `hash_1k_lines`: comfortably passes target
+- `hash_10k_lines`: now comfortably under the `<5 ms` target across the measured range
+- `hash_10k_long_lines`: remains a useful stress case; slightly slower than the short-line 10k case and should still be treated as supplemental coverage rather than a plan threshold
 
 ### Adjacent hot paths
-- `stats` is substantially more expensive than load-only hashing, especially on collision-heavy input, which is expected because it builds an index, detects collisions, estimates tokens, and computes guidance.
-- `verify` stays sub-2 ms for the benchmarked batches because it reuses a single document/index and measures deterministic resolution work rather than process startup.
-- `watch` diff computation is comfortably sub-millisecond for the benchmarked 10k-line cases, so deterministic recomputation is not the bottleneck behind the user-facing 500 ms watch target.
+- `stats` remains more expensive than load-only hashing, especially on collision-heavy input, which is expected because it builds an index, detects collisions, estimates tokens, and computes guidance.
+- `verify` is now comfortably sub-millisecond even for the 100-anchor batch in this benchmark setup, reflecting fast deterministic resolution on a reused document/index.
+- `watch` diff computation remains comfortably sub-millisecond for the benchmarked 10k-line cases, so deterministic recomputation is not the bottleneck behind the user-facing 500 ms watch target.
 
 ## Notes
 
-- The benchmark suite now covers four deterministic layers: hashing/load, stats analysis, batched verify resolution, and watch diff computation.
-- Hash/load benchmarks still measure `Document::from_str(...)` on generated in-memory input and intentionally exclude file I/O and process startup.
+- The benchmark suite covers four deterministic layers: hashing/load, stats analysis, batched verify resolution, and watch diff computation.
+- Hash/load benchmarks measure `Document::from_str(...)` on generated in-memory input and intentionally exclude file I/O and process startup.
 - Verify benchmarks measure anchor parsing and resolution against one prebuilt document/index, matching the command's core hot path rather than CLI overhead.
 - Watch benchmarks intentionally exclude filesystem event latency and benchmark only `diff_documents(...)`.
-- Criterion reported regressions for the existing hash benchmarks relative to the prior saved baseline. That indicates the new run is slower than the earlier benchmark history on this machine/session baseline, not that the implementation is functionally incorrect.
+- In this run, Criterion reported improvements for nearly all tracked benchmarks relative to the prior saved baseline; `hash_10k_long_lines` was reported as no significant change.
 - Coarse CLI-envelope regression tests were added separately and are gated behind `LINEHASH_RUN_PERF=1` so normal `cargo test` remains stable.

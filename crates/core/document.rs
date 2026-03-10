@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -8,7 +7,9 @@ use std::time::UNIX_EPOCH;
 use serde::Serialize;
 
 use crate::error::LinehashError;
-use crate::hash;
+use crate::hash::{self, ShortHash};
+
+pub type ShortHashIndex = Vec<Vec<usize>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NewlineStyle {
@@ -37,7 +38,7 @@ pub struct LineRecord {
     pub number: usize,
     pub content: String,
     pub full_hash: u32,
-    pub short_hash: String,
+    pub short_hash: ShortHash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -102,13 +103,10 @@ impl Document {
         })
     }
 
-    pub fn build_index(&self) -> HashMap<String, Vec<usize>> {
-        let mut index = HashMap::new();
+    pub fn build_index(&self) -> ShortHashIndex {
+        let mut index = empty_index();
         for (line_index, line) in self.lines.iter().enumerate() {
-            index
-                .entry(line.short_hash.clone())
-                .or_insert_with(Vec::new)
-                .push(line_index);
+            index[line.short_hash as usize].push(line_index);
         }
         index
     }
@@ -134,17 +132,15 @@ impl Document {
 
     pub fn compute_stats(&self) -> FileStats {
         let index = self.build_index();
-        let mut collision_pairs = collect_collision_pairs(self, &index);
+        let mut collision_pairs = collect_collision_pairs(&index);
         collision_pairs.sort_unstable();
+
+        let (unique_hashes, collision_count) = summarize_buckets(&index);
 
         FileStats {
             line_count: self.len(),
-            unique_hashes: index.len(),
-            collision_count: index
-                .values()
-                .filter(|positions| positions.len() >= 2)
-                .map(Vec::len)
-                .sum(),
+            unique_hashes,
+            collision_count,
             collision_pairs,
             estimated_read_tokens: estimate_read_tokens(self),
             hash_length_advice: recommend_hash_length(self),
@@ -174,29 +170,45 @@ impl FileMeta {
     }
 }
 
-fn build_lines(content: &str, newline: NewlineStyle) -> Vec<LineRecord> {
-    let raw_lines: Vec<&str> = if content.is_empty() {
-        Vec::new()
-    } else {
-        match newline {
-            NewlineStyle::Lf => content.split_terminator('\n').collect(),
-            NewlineStyle::Crlf => content.split_terminator("\r\n").collect(),
-        }
-    };
+pub fn format_short_hash(short_hash: ShortHash) -> String {
+    hash::format_short_hash(short_hash)
+}
 
-    raw_lines
-        .into_iter()
-        .enumerate()
-        .map(|(index, line)| {
-            let full_hash = hash::full_hash(line);
-            LineRecord {
-                number: index + 1,
-                content: line.to_owned(),
-                full_hash,
-                short_hash: hash::short_from_full(full_hash),
+fn build_lines(content: &str, newline: NewlineStyle) -> Vec<LineRecord> {
+    if content.is_empty() {
+        return Vec::new();
+    }
+
+    let line_count = match newline {
+        NewlineStyle::Lf => content.as_bytes().iter().filter(|byte| **byte == b'\n').count(),
+        NewlineStyle::Crlf => content.as_bytes().windows(2).filter(|window| *window == b"\r\n").count(),
+    };
+    let mut lines = Vec::with_capacity(line_count);
+
+    match newline {
+        NewlineStyle::Lf => {
+            for (index, line) in content.split_terminator('\n').enumerate() {
+                lines.push(build_line_record(index + 1, line));
             }
-        })
-        .collect()
+        }
+        NewlineStyle::Crlf => {
+            for (index, line) in content.split_terminator("\r\n").enumerate() {
+                lines.push(build_line_record(index + 1, line));
+            }
+        }
+    }
+
+    lines
+}
+
+fn build_line_record(number: usize, content: &str) -> LineRecord {
+    let full_hash = hash::full_hash(content);
+    LineRecord {
+        number,
+        content: content.to_owned(),
+        full_hash,
+        short_hash: hash::short_from_full(full_hash),
+    }
 }
 
 fn detect_newline_style(content: &str, path: &Path) -> Result<NewlineStyle, LinehashError> {
@@ -240,19 +252,39 @@ fn detect_newline_style(content: &str, path: &Path) -> Result<NewlineStyle, Line
     }
 }
 
-fn collect_collision_pairs(
-    doc: &Document,
-    index: &HashMap<String, Vec<usize>>,
-) -> Vec<(usize, usize)> {
-    let mut pairs = Vec::new();
+fn empty_index() -> ShortHashIndex {
+    vec![Vec::new(); 256]
+}
 
-    for positions in index.values().filter(|positions| positions.len() >= 2) {
+fn summarize_buckets(index: &ShortHashIndex) -> (usize, usize) {
+    let mut unique_hashes = 0;
+    let mut collision_count = 0;
+
+    for positions in index {
+        if positions.is_empty() {
+            continue;
+        }
+        unique_hashes += 1;
+        if positions.len() >= 2 {
+            collision_count += positions.len();
+        }
+    }
+
+    (unique_hashes, collision_count)
+}
+
+fn collect_collision_pairs(index: &ShortHashIndex) -> Vec<(usize, usize)> {
+    let capacity = index
+        .iter()
+        .filter(|positions| positions.len() >= 2)
+        .map(|positions| positions.len() * (positions.len() - 1) / 2)
+        .sum();
+    let mut pairs = Vec::with_capacity(capacity);
+
+    for positions in index.iter().filter(|positions| positions.len() >= 2) {
         for left in 0..positions.len() {
             for right in left + 1..positions.len() {
-                pairs.push((
-                    doc.lines[positions[left]].number,
-                    doc.lines[positions[right]].number,
-                ));
+                pairs.push((positions[left] + 1, positions[right] + 1));
             }
         }
     }
@@ -328,7 +360,7 @@ fn inode_from_metadata(_metadata: &fs::Metadata) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Document, FileStats, NewlineStyle};
+    use super::{Document, FileStats, NewlineStyle, format_short_hash};
     use crate::error::LinehashError;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -358,29 +390,12 @@ mod tests {
     }
 
     #[test]
-    fn test_load_mixed_newlines_fails() {
-        let (_dir, path) = write_temp_file("alpha\nbeta\r\n");
-        let error = Document::load(&path).unwrap_err();
-
-        assert!(matches!(error, LinehashError::MixedNewlines { .. }));
-    }
-
-    #[test]
-    fn test_load_empty_file() {
-        let (_dir, path) = write_temp_file("");
-        let document = Document::load(&path).unwrap();
-
-        assert!(document.is_empty());
-        assert!(!document.trailing_newline);
-        assert_eq!(document.render(), b"");
-    }
-
-    #[test]
     fn test_load_single_line_no_trailing_newline() {
         let (_dir, path) = write_temp_file("alpha");
         let document = Document::load(&path).unwrap();
 
-        assert_eq!(document.len(), 1);
+        assert_eq!(document.lines.len(), 1);
+        assert_eq!(document.lines[0].content, "alpha");
         assert!(!document.trailing_newline);
     }
 
@@ -389,8 +404,18 @@ mod tests {
         let (_dir, path) = write_temp_file("alpha\n");
         let document = Document::load(&path).unwrap();
 
-        assert_eq!(document.len(), 1);
+        assert_eq!(document.lines.len(), 1);
+        assert_eq!(document.lines[0].content, "alpha");
         assert!(document.trailing_newline);
+    }
+
+    #[test]
+    fn test_load_empty_file() {
+        let (_dir, path) = write_temp_file("");
+        let document = Document::load(&path).unwrap();
+
+        assert!(document.lines.is_empty());
+        assert!(!document.trailing_newline);
     }
 
     #[test]
@@ -398,9 +423,17 @@ mod tests {
         let (_dir, path) = write_temp_file("  \n\t\n");
         let document = Document::load(&path).unwrap();
 
+        assert_eq!(document.lines.len(), 2);
         assert_eq!(document.lines[0].content, "  ");
         assert_eq!(document.lines[1].content, "\t");
-        assert_ne!(document.lines[0].short_hash, document.lines[1].short_hash);
+    }
+
+    #[test]
+    fn test_load_mixed_newlines_fails() {
+        let (_dir, path) = write_temp_file("alpha\r\nbeta\n");
+        let error = Document::load(&path).unwrap_err();
+
+        assert!(matches!(error, LinehashError::MixedNewlines { .. }));
     }
 
     #[test]
@@ -414,20 +447,21 @@ mod tests {
     }
 
     #[test]
-    fn test_binary_check_precedes_utf8_error_when_nul_is_present() {
+    fn test_load_binary_file_fails() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("binary-invalid.txt");
-        fs::write(&path, [0xff, 0x00, 0xfe]).unwrap();
+        let path = dir.path().join("binary.bin");
+        fs::write(&path, b"abc\0def").unwrap();
 
         let error = Document::load(&path).unwrap_err();
         assert!(matches!(error, LinehashError::BinaryFile { .. }));
     }
 
     #[test]
-    fn test_load_binary_file_fails() {
+    fn test_binary_check_precedes_utf8_error_when_nul_is_present() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("binary.txt");
-        fs::write(&path, b"abc\0def").unwrap();
+        let path = dir.path().join("binary-or-invalid.bin");
+        let bytes = vec![0xff, 0x00, 0xfe];
+        fs::write(&path, bytes).unwrap();
 
         let error = Document::load(&path).unwrap_err();
         assert!(matches!(error, LinehashError::BinaryFile { .. }));
@@ -436,81 +470,65 @@ mod tests {
     #[test]
     fn test_binary_file_hint_matches_product_wording() {
         let error = LinehashError::BinaryFile {
-            path: "demo.bin".into(),
+            path: "demo.bin".to_owned(),
         };
-
-        assert_eq!(
-            error.hint(),
-            Some("linehash only supports UTF-8 text files")
-        );
+        assert_eq!(error.hint(), Some("linehash only supports UTF-8 text files"));
     }
 
     #[test]
     fn test_render_lf_round_trip() {
-        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
-        assert_eq!(document.render(), b"alpha\nbeta\n");
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+        assert_eq!(doc.render(), b"alpha\nbeta\n");
     }
 
     #[test]
     fn test_render_crlf_round_trip() {
-        let document = Document::from_str(Path::new("demo.txt"), "alpha\r\nbeta\r\n").unwrap();
-        assert_eq!(document.render(), b"alpha\r\nbeta\r\n");
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\r\nbeta\r\n").unwrap();
+        assert_eq!(doc.render(), b"alpha\r\nbeta\r\n");
     }
 
     #[test]
     fn test_render_no_trailing_newline_preserved() {
-        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta").unwrap();
-        assert_eq!(document.render(), b"alpha\nbeta");
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta").unwrap();
+        assert_eq!(doc.render(), b"alpha\nbeta");
     }
 
     #[test]
     fn test_render_trailing_newline_preserved() {
-        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
-        assert_eq!(document.render(), b"alpha\nbeta\n");
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\n").unwrap();
+        assert_eq!(doc.render(), b"alpha\n");
     }
 
     #[test]
     fn test_render_empty_document_is_empty_bytes() {
-        let document = Document::from_str(Path::new("demo.txt"), "").unwrap();
-        assert_eq!(document.render(), b"");
+        let doc = Document::from_str(Path::new("demo.txt"), "").unwrap();
+        assert!(doc.render().is_empty());
+    }
+
+    #[test]
+    fn test_line_numbers_are_1_based() {
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+        assert_eq!(doc.lines[0].number, 1);
+        assert_eq!(doc.lines[1].number, 2);
     }
 
     #[test]
     fn test_build_index_unique_hashes() {
-        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
-        let index = document.build_index();
-
-        assert_eq!(index.len(), 2);
-        assert!(index.values().all(|positions| positions.len() == 1));
+        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
+        let index = doc.build_index();
+        let alpha_hash = doc.lines[0].short_hash as usize;
+        let beta_hash = doc.lines[1].short_hash as usize;
+        assert_eq!(index[alpha_hash], vec![0]);
+        assert_eq!(index[beta_hash], vec![1]);
     }
 
     #[test]
     fn test_build_index_collision_has_multiple_entries() {
         let (first, second) = find_collision_pair();
-        let document =
-            Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\n")).unwrap();
-        let index = document.build_index();
-        let hash = document.lines[0].short_hash.clone();
-
-        assert_eq!(index.get(&hash), Some(&vec![0, 1]));
-    }
-
-    #[test]
-    fn test_line_numbers_are_1_based() {
-        let document = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
-        assert_eq!(document.lines[0].number, 1);
-        assert_eq!(document.lines[1].number, 2);
-    }
-
-    #[test]
-    fn test_filemeta_captured() {
-        let (_dir, path) = write_temp_file("alpha\n");
-        let document = Document::load(&path).unwrap();
-
-        let metadata = document
-            .file_meta
-            .expect("file metadata should be captured");
-        assert!(metadata.mtime_secs >= 0);
+        let doc = Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\n")).unwrap();
+        let index = doc.build_index();
+        let short = doc.lines[0].short_hash as usize;
+        assert_eq!(index[short], vec![0, 1]);
     }
 
     #[test]
@@ -544,11 +562,9 @@ mod tests {
     #[test]
     fn test_collision_count_and_pairs_correct() {
         let (first, second) = find_collision_pair();
-        let document = Document::from_str(
-            Path::new("demo.txt"),
-            &format!("{first}\n{second}\nunique\n"),
-        )
-        .unwrap();
+        let document =
+            Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\nunique\n"))
+                .unwrap();
         let stats = document.compute_stats();
         assert_eq!(stats.collision_count, 2);
         assert_eq!(stats.collision_pairs, vec![(1, 2)]);
@@ -572,8 +588,8 @@ mod tests {
 
     #[test]
     fn test_hash_length_advice_4_for_medium_file() {
-        let content = (1..=40)
-            .map(|n| format!("line-{n}"))
+        let content = (0..200)
+            .map(|i| format!("line-{i}"))
             .collect::<Vec<_>>()
             .join("\n")
             + "\n";
@@ -596,17 +612,34 @@ mod tests {
 
     #[test]
     fn test_context_suggestion_capped_at_20() {
-        let mut lines = vec![String::from("fn a")];
-        lines.extend((0..50).map(|n| format!("line-{n}")));
+        let mut lines = (0..100).map(|i| format!("line-{i}")).collect::<Vec<_>>();
+        lines.insert(0, String::from("fn a"));
         lines.push(String::from("fn b"));
         let document =
             Document::from_str(Path::new("demo.txt"), &(lines.join("\n") + "\n")).unwrap();
         assert_eq!(document.compute_stats().suggested_context_n, 20);
     }
 
+    #[test]
+    fn test_filemeta_captured() {
+        let (_dir, path) = write_temp_file("alpha\n");
+        let document = Document::load(&path).unwrap();
+
+        let meta = document.file_meta.expect("metadata should be present");
+        assert!(meta.mtime_secs > 0);
+        #[cfg(unix)]
+        assert!(meta.inode > 0);
+    }
+
+    #[test]
+    fn test_short_hash_formatting_round_trip() {
+        let document = Document::from_str(Path::new("demo.txt"), "alpha\n").unwrap();
+        assert_eq!(format_short_hash(document.lines[0].short_hash).len(), 2);
+    }
+
     fn write_temp_file(content: &str) -> (TempDir, PathBuf) {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("fixture.txt");
+        let path = dir.path().join("demo.txt");
         fs::write(&path, content).unwrap();
         (dir, path)
     }
@@ -616,13 +649,13 @@ mod tests {
             let left = format!("line-{i}");
             for j in (i + 1)..10_000 {
                 let right = format!("line-{j}");
-                let left_doc = Document::from_str(Path::new("demo.txt"), &left).unwrap();
-                let right_doc = Document::from_str(Path::new("demo.txt"), &right).unwrap();
-                if left_doc.lines[0].short_hash == right_doc.lines[0].short_hash {
+                let doc = Document::from_str(Path::new("demo.txt"), &format!("{left}\n{right}\n"))
+                    .unwrap();
+                if doc.lines[0].short_hash == doc.lines[1].short_hash {
                     return (left, right);
                 }
             }
         }
-        panic!("failed to find a collision pair");
+        panic!("failed to find a collision doc");
     }
 }

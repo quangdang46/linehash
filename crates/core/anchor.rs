@@ -1,14 +1,13 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
-
-use crate::document::Document;
+use crate::document::{Document, ShortHashIndex, format_short_hash};
 use crate::error::LinehashError;
+use crate::hash::ShortHash;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Anchor {
-    Hash { short: String },
-    LineHash { line: usize, short: String },
+    Hash { short: ShortHash },
+    LineHash { line: usize, short: ShortHash },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,15 +34,12 @@ pub fn parse_anchor(s: &str) -> Result<Anchor, LinehashError> {
 
     if let Some((line, short)) = normalized.split_once(':') {
         let line = parse_line_number(line, s)?;
-        validate_short_hash(short, s)?;
-        return Ok(Anchor::LineHash {
-            line,
-            short: short.to_owned(),
-        });
+        let short = parse_short_hash(short, s)?;
+        return Ok(Anchor::LineHash { line, short });
     }
 
-    validate_short_hash(&normalized, s)?;
-    Ok(Anchor::Hash { short: normalized })
+    let short = parse_short_hash(&normalized, s)?;
+    Ok(Anchor::Hash { short })
 }
 
 pub fn parse_range(s: &str) -> Result<RangeAnchor, LinehashError> {
@@ -79,18 +75,18 @@ pub fn parse_range(s: &str) -> Result<RangeAnchor, LinehashError> {
 pub fn resolve(
     anchor: &Anchor,
     doc: &Document,
-    index: &HashMap<String, Vec<usize>>,
+    index: &ShortHashIndex,
 ) -> Result<ResolvedLine, LinehashError> {
     match anchor {
-        Anchor::Hash { short } => resolve_unqualified(short, doc, index),
-        Anchor::LineHash { line, short } => resolve_qualified(*line, short, doc, index),
+        Anchor::Hash { short } => resolve_unqualified(*short, doc, index),
+        Anchor::LineHash { line, short } => resolve_qualified(*line, *short, doc, index),
     }
 }
 
 pub fn resolve_range(
     range: &RangeAnchor,
     doc: &Document,
-    index: &HashMap<String, Vec<usize>>,
+    index: &ShortHashIndex,
 ) -> Result<(ResolvedLine, ResolvedLine), LinehashError> {
     let start = resolve(&range.start, doc, index)?;
     let end = resolve(&range.end, doc, index)?;
@@ -111,7 +107,7 @@ pub fn resolve_range(
 pub fn resolve_all(
     anchors: &[Anchor],
     doc: &Document,
-    index: &HashMap<String, Vec<usize>>,
+    index: &ShortHashIndex,
 ) -> Vec<Result<ResolvedLine, LinehashError>> {
     anchors
         .iter()
@@ -120,26 +116,24 @@ pub fn resolve_all(
 }
 
 fn resolve_unqualified(
-    short: &str,
+    short: ShortHash,
     doc: &Document,
-    index: &HashMap<String, Vec<usize>>,
+    index: &ShortHashIndex,
 ) -> Result<ResolvedLine, LinehashError> {
     let path = doc.path.display().to_string();
-    match index.get(short) {
-        None => Err(LinehashError::HashNotFound {
-            hash: short.to_owned(),
+    let rendered_short = format_short_hash(short);
+    match index[short as usize].as_slice() {
+        [] => Err(LinehashError::HashNotFound {
+            hash: rendered_short,
             path,
         }),
-        Some(matches) if matches.len() == 1 => {
-            let resolved_index = matches[0];
-            Ok(ResolvedLine {
-                index: resolved_index,
-                line_no: resolved_index + 1,
-                short_hash: short.to_owned(),
-            })
-        }
-        Some(matches) => Err(LinehashError::AmbiguousHash {
-            hash: short.to_owned(),
+        [resolved_index] => Ok(ResolvedLine {
+            index: *resolved_index,
+            line_no: resolved_index + 1,
+            short_hash: rendered_short,
+        }),
+        matches => Err(LinehashError::AmbiguousHash {
+            hash: rendered_short,
             count: matches.len(),
             lines: matches
                 .iter()
@@ -153,37 +147,36 @@ fn resolve_unqualified(
 
 fn resolve_qualified(
     line: usize,
-    short: &str,
+    short: ShortHash,
     doc: &Document,
-    index: &HashMap<String, Vec<usize>>,
+    index: &ShortHashIndex,
 ) -> Result<ResolvedLine, LinehashError> {
     let path = doc.path.display().to_string();
+    let rendered_short = format_short_hash(short);
     let idx = line
         .checked_sub(1)
         .ok_or_else(|| LinehashError::InvalidAnchor {
-            anchor: format!("{line}:{short}"),
+            anchor: format!("{line}:{rendered_short}"),
         })?;
 
     let actual = doc
         .lines
         .get(idx)
         .ok_or_else(|| LinehashError::InvalidAnchor {
-            anchor: format!("{line}:{short}"),
+            anchor: format!("{line}:{rendered_short}"),
         })?;
 
     if actual.short_hash == short {
         return Ok(ResolvedLine {
             index: idx,
             line_no: line,
-            short_hash: short.to_owned(),
+            short_hash: rendered_short,
         });
     }
 
-    let relocated_suffix = index
-        .get(short)
-        .filter(|matches| !matches.is_empty())
-        .map(|matches| {
-            let lines = matches
+    let relocated_suffix = (!index[short as usize].is_empty())
+        .then(|| {
+            let lines = index[short as usize]
                 .iter()
                 .map(|idx| (idx + 1).to_string())
                 .collect::<Vec<_>>()
@@ -192,10 +185,10 @@ fn resolve_qualified(
         })
         .unwrap_or_default();
     Err(LinehashError::StaleAnchor {
-        anchor: format!("{line}:{short}").into_boxed_str(),
+        anchor: format!("{line}:{rendered_short}").into_boxed_str(),
         line,
-        expected: short.to_owned().into_boxed_str(),
-        actual: actual.short_hash.clone().into_boxed_str(),
+        expected: rendered_short.into_boxed_str(),
+        actual: format_short_hash(actual.short_hash).into_boxed_str(),
         path: path.into_boxed_str(),
         relocated_suffix: relocated_suffix.into_boxed_str(),
     })
@@ -205,10 +198,11 @@ fn normalize_anchor_input(s: &str) -> String {
     s.trim().to_ascii_lowercase()
 }
 
-fn validate_short_hash(short: &str, original: &str) -> Result<(), LinehashError> {
-    let is_valid = short.len() == 2 && short.chars().all(|ch| ch.is_ascii_hexdigit());
-    if is_valid {
-        Ok(())
+fn parse_short_hash(short: &str, original: &str) -> Result<ShortHash, LinehashError> {
+    if short.len() == 2 && short.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        u8::from_str_radix(short, 16).map_err(|_| LinehashError::InvalidAnchor {
+            anchor: original.trim().to_owned(),
+        })
     } else {
         Err(LinehashError::InvalidAnchor {
             anchor: original.trim().to_owned(),
@@ -234,8 +228,8 @@ fn parse_line_number(raw: &str, original: &str) -> Result<usize, LinehashError> 
 
 fn display_anchor(anchor: &Anchor) -> String {
     match anchor {
-        Anchor::Hash { short } => short.clone(),
-        Anchor::LineHash { line, short } => format!("{line}:{short}"),
+        Anchor::Hash { short } => format_short_hash(*short),
+        Anchor::LineHash { line, short } => format!("{line}:{}", format_short_hash(*short)),
     }
 }
 
@@ -246,22 +240,17 @@ mod tests {
     };
     use crate::document::Document;
     use crate::error::LinehashError;
+    use crate::hash::format_short_hash;
     use std::path::Path;
 
     #[test]
     fn test_parse_unqualified_lowercase() {
-        assert_eq!(
-            parse_anchor("f1").unwrap(),
-            Anchor::Hash { short: "f1".into() }
-        );
+        assert_eq!(parse_anchor("f1").unwrap(), Anchor::Hash { short: 0xf1 });
     }
 
     #[test]
     fn test_parse_unqualified_uppercase_normalizes() {
-        assert_eq!(
-            parse_anchor("F1").unwrap(),
-            Anchor::Hash { short: "f1".into() }
-        );
+        assert_eq!(parse_anchor("F1").unwrap(), Anchor::Hash { short: 0xf1 });
     }
 
     #[test]
@@ -270,7 +259,7 @@ mod tests {
             parse_anchor("2:f1").unwrap(),
             Anchor::LineHash {
                 line: 2,
-                short: "f1".into()
+                short: 0xf1
             }
         );
     }
@@ -281,7 +270,7 @@ mod tests {
             parse_anchor("2:F1").unwrap(),
             Anchor::LineHash {
                 line: 2,
-                short: "f1".into()
+                short: 0xf1
             }
         );
     }
@@ -293,14 +282,14 @@ mod tests {
             range.start,
             Anchor::LineHash {
                 line: 2,
-                short: "f1".into()
+                short: 0xf1
             }
         );
         assert_eq!(
             range.end,
             Anchor::LineHash {
                 line: 4,
-                short: "9c".into()
+                short: 0x9c
             }
         );
     }
@@ -341,7 +330,7 @@ mod tests {
     fn test_resolve_unqualified_not_found() {
         let doc = sample_doc();
         let index = doc.build_index();
-        let error = resolve(&Anchor::Hash { short: "ff".into() }, &doc, &index).unwrap_err();
+        let error = resolve(&Anchor::Hash { short: 0xff }, &doc, &index).unwrap_err();
 
         assert!(matches!(error, LinehashError::HashNotFound { .. }));
     }
@@ -350,21 +339,14 @@ mod tests {
     fn test_resolve_unqualified_single_match() {
         let doc = sample_doc();
         let index = doc.build_index();
-        let short = doc.lines[1].short_hash.clone();
+        let short = doc.lines[1].short_hash;
 
         assert_eq!(
-            resolve(
-                &Anchor::Hash {
-                    short: short.clone()
-                },
-                &doc,
-                &index
-            )
-            .unwrap(),
+            resolve(&Anchor::Hash { short }, &doc, &index).unwrap(),
             ResolvedLine {
                 index: 1,
                 line_no: 2,
-                short_hash: short
+                short_hash: format_short_hash(short)
             }
         );
     }
@@ -373,7 +355,7 @@ mod tests {
     fn test_resolve_unqualified_ambiguous() {
         let doc = collision_doc();
         let index = doc.build_index();
-        let short = doc.lines[0].short_hash.clone();
+        let short = doc.lines[0].short_hash;
         let error = resolve(&Anchor::Hash { short }, &doc, &index).unwrap_err();
 
         assert!(matches!(error, LinehashError::AmbiguousHash { .. }));
@@ -383,13 +365,13 @@ mod tests {
     fn test_resolve_qualified_match() {
         let doc = sample_doc();
         let index = doc.build_index();
-        let short = doc.lines[1].short_hash.clone();
+        let short = doc.lines[1].short_hash;
 
         assert_eq!(
             resolve(
                 &Anchor::LineHash {
                     line: 2,
-                    short: short.clone()
+                    short
                 },
                 &doc,
                 &index
@@ -398,7 +380,7 @@ mod tests {
             ResolvedLine {
                 index: 1,
                 line_no: 2,
-                short_hash: short
+                short_hash: format_short_hash(short)
             }
         );
     }
@@ -410,7 +392,7 @@ mod tests {
         let error = resolve(
             &Anchor::LineHash {
                 line: 2,
-                short: "ff".into(),
+                short: 0xff,
             },
             &doc,
             &index,
@@ -424,7 +406,7 @@ mod tests {
     fn test_resolve_qualified_stale_mentions_relocated_hash_when_present() {
         let doc = sample_doc();
         let index = doc.build_index();
-        let relocated_hash = doc.lines[0].short_hash.clone();
+        let relocated_hash = doc.lines[0].short_hash;
         let error = resolve(
             &Anchor::LineHash {
                 line: 2,
@@ -447,7 +429,7 @@ mod tests {
         let error = resolve(
             &Anchor::LineHash {
                 line: 99,
-                short: "aa".into(),
+                short: 0xaa,
             },
             &doc,
             &index,
@@ -461,8 +443,8 @@ mod tests {
     fn test_resolve_range_valid() {
         let doc = sample_doc();
         let index = doc.build_index();
-        let start = format!("1:{}", doc.lines[0].short_hash);
-        let end = format!("3:{}", doc.lines[2].short_hash);
+        let start = format!("1:{}", format_short_hash(doc.lines[0].short_hash));
+        let end = format!("3:{}", format_short_hash(doc.lines[2].short_hash));
         let range = parse_range(&format!("{start}..{end}")).unwrap();
 
         let (resolved_start, resolved_end) = resolve_range(&range, &doc, &index).unwrap();
@@ -474,8 +456,8 @@ mod tests {
     fn test_resolve_range_start_after_end_fails() {
         let doc = sample_doc();
         let index = doc.build_index();
-        let start = format!("3:{}", doc.lines[2].short_hash);
-        let end = format!("1:{}", doc.lines[0].short_hash);
+        let start = format!("3:{}", format_short_hash(doc.lines[2].short_hash));
+        let end = format!("1:{}", format_short_hash(doc.lines[0].short_hash));
         let range = parse_range(&format!("{start}..{end}")).unwrap();
 
         let error = resolve_range(&range, &doc, &index).unwrap_err();
@@ -489,9 +471,9 @@ mod tests {
         let results = resolve_all(
             &[
                 Anchor::Hash {
-                    short: doc.lines[0].short_hash.clone(),
+                    short: doc.lines[0].short_hash,
                 },
-                Anchor::Hash { short: "ff".into() },
+                Anchor::Hash { short: 0xff },
             ],
             &doc,
             &index,
@@ -515,11 +497,11 @@ mod tests {
             &[
                 Anchor::LineHash {
                     line: 1,
-                    short: doc.lines[0].short_hash.clone(),
+                    short: doc.lines[0].short_hash,
                 },
                 Anchor::LineHash {
                     line: 2,
-                    short: doc.lines[1].short_hash.clone(),
+                    short: doc.lines[1].short_hash,
                 },
             ],
             &doc,

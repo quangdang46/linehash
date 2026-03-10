@@ -28,7 +28,7 @@ fn build_anchor_batch(line_count: usize, anchor_count: usize) -> (Document, Vec<
         .lines
         .iter()
         .take(anchor_count)
-        .map(|line| format!("{}:{}", line.number, line.short_hash))
+        .map(|line| format!("{}:{}", line.number, document::format_short_hash(line.short_hash)))
         .collect();
     (doc, anchors)
 }
@@ -44,11 +44,11 @@ fn build_mixed_anchor_batch(line_count: usize, anchor_count: usize) -> (Document
         doc.lines
             .iter()
             .take(valid_count)
-            .map(|line| format!("{}:{}", line.number, line.short_hash)),
+            .map(|line| format!("{}:{}", line.number, document::format_short_hash(line.short_hash))),
     );
 
     anchors.extend(doc.lines.iter().skip(valid_count).take(stale_count).map(|line| {
-        format!("{}:{}", line.number, mutate_short_hash(&line.short_hash))
+        format!("{}:{}", line.number, mutate_short_hash(&document::format_short_hash(line.short_hash)))
     }));
 
     anchors.extend((0..invalid_count).map(|i| format!("bogus-anchor-{i}")));

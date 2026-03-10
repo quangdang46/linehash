@@ -2,6 +2,8 @@
 
 use xxhash_rust::xxh32::xxh32;
 
+pub type ShortHash = u8;
+
 pub fn full_hash(line: &str) -> u32 {
     full_hash_bytes(line.as_bytes())
 }
@@ -11,20 +13,31 @@ pub fn full_hash_bytes(bytes: &[u8]) -> u32 {
 }
 
 pub fn short_hash(line: &str) -> String {
+    format_short_hash(short_hash_value(line))
+}
+
+pub fn short_hash_value(line: &str) -> ShortHash {
     short_from_full(full_hash(line))
 }
 
-pub fn short_from_full(full: u32) -> String {
-    format!("{:02x}", full & 0xff)
+pub fn short_from_full(full: u32) -> ShortHash {
+    (full & 0xff) as ShortHash
+}
+
+pub fn format_short_hash(short: ShortHash) -> String {
+    format!("{short:02x}")
 }
 
 pub fn collides(a: &str, b: &str) -> bool {
-    short_hash(a) == short_hash(b)
+    short_hash_value(a) == short_hash_value(b)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{collides, full_hash, full_hash_bytes, short_from_full, short_hash};
+    use super::{
+        collides, format_short_hash, full_hash, full_hash_bytes, short_from_full, short_hash,
+        short_hash_value,
+    };
     use std::collections::HashMap;
     use xxhash_rust::xxh32::xxh32;
 
@@ -100,14 +113,20 @@ mod tests {
     #[test]
     fn test_short_from_full_matches_short_hash() {
         let line = "alpha beta gamma";
-        assert_eq!(short_from_full(full_hash(line)), short_hash(line));
+        assert_eq!(format_short_hash(short_from_full(full_hash(line))), short_hash(line));
+    }
+
+    #[test]
+    fn test_numeric_short_hash_matches_string_format() {
+        let line = "alpha beta gamma";
+        assert_eq!(format_short_hash(short_hash_value(line)), short_hash(line));
     }
 
     fn find_collision_pair() -> (String, String) {
-        let mut seen: HashMap<String, String> = HashMap::new();
+        let mut seen: HashMap<_, String> = HashMap::new();
         for i in 0..10_000 {
             let candidate = format!("line-{i}");
-            let hash = short_hash(&candidate);
+            let hash = short_hash_value(&candidate);
             if let Some(existing) = seen.insert(hash, candidate.clone()) {
                 if existing != candidate {
                     return (existing, candidate);
@@ -121,7 +140,7 @@ mod tests {
         for i in 0..1_000 {
             let left = format!("left-{i}");
             let right = format!("right-{i}");
-            if short_hash(&left) != short_hash(&right) {
+            if short_hash_value(&left) != short_hash_value(&right) {
                 return (left, right);
             }
         }

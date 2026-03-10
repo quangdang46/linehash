@@ -53,8 +53,31 @@ pub enum LinehashError {
     #[error("file '{path}' changed since the last read")]
     StaleFile { path: String },
 
+    #[error("invalid indent amount '{amount}' (expected +N or -N)")]
+    InvalidIndentAmount { amount: String },
+
+    #[error("range start (line {start}) is after range end (line {end})")]
+    InvalidIndentRange { start: usize, end: usize },
+
+    #[error("dedent by {amount} would underflow line {line_no} (only {available} leading {kind} available)")]
+    IndentUnderflow {
+        line_no: usize,
+        amount: usize,
+        available: usize,
+        kind: &'static str,
+    },
+
+    #[error("range uses mixed indentation styles (spaces and tabs) at line {line_no}")]
+    MixedIndentation { line_no: usize },
+
     #[error("invalid pattern '{pattern}': {message}")]
     InvalidPattern { pattern: String, message: String },
+
+    #[error("diff hunk at line {hunk_line} could not be matched to current file content")]
+    DiffHunkMismatch { hunk_line: usize },
+
+    #[error("diff targets '{diff_file}' but file argument is '{given_file}'")]
+    DiffFileMismatch { diff_file: String, given_file: String },
 
     #[error("patch failed at operation {op_index}: {reason}")]
     PatchFailed { op_index: usize, reason: String },
@@ -102,7 +125,25 @@ impl LinehashError {
             LinehashError::StaleFile { .. } => Some(
                 "re-read the file metadata and retry with fresh --expect-mtime/--expect-inode values",
             ),
+            LinehashError::InvalidIndentAmount { .. } => {
+                Some("use an amount like '+4' to indent or '-2' to dedent")
+            }
+            LinehashError::InvalidIndentRange { .. } => {
+                Some("use a range where the start anchor resolves before the end anchor")
+            }
+            LinehashError::IndentUnderflow { .. } => {
+                Some("reduce the dedent amount or narrow the target range")
+            }
+            LinehashError::MixedIndentation { .. } => {
+                Some("normalize indentation in the target range before retrying the command")
+            }
             LinehashError::InvalidPattern { .. } => Some("fix the pattern syntax and try again"),
+            LinehashError::DiffHunkMismatch { .. } => {
+                Some("re-generate the diff from the current file and retry the command")
+            }
+            LinehashError::DiffFileMismatch { .. } => {
+                Some("check that the diff target matches the file argument and retry")
+            }
             LinehashError::PatchFailed { .. } => {
                 Some("fix the failing patch operation and retry the transaction")
             }
@@ -138,7 +179,13 @@ impl LinehashError {
             | LinehashError::AmbiguousHash { .. }
             | LinehashError::StaleAnchor { .. }
             | LinehashError::StaleFile { .. }
+            | LinehashError::InvalidIndentAmount { .. }
+            | LinehashError::InvalidIndentRange { .. }
+            | LinehashError::IndentUnderflow { .. }
+            | LinehashError::MixedIndentation { .. }
             | LinehashError::InvalidPattern { .. }
+            | LinehashError::DiffHunkMismatch { .. }
+            | LinehashError::DiffFileMismatch { .. }
             | LinehashError::PatchFailed { .. }
             | LinehashError::MultiLineContentUnsupported
             | LinehashError::MutationIndexOutOfBounds { .. }
@@ -192,9 +239,25 @@ mod tests {
             LinehashError::StaleFile {
                 path: "demo.txt".into(),
             },
+            LinehashError::InvalidIndentAmount {
+                amount: "sideways".into(),
+            },
+            LinehashError::InvalidIndentRange { start: 4, end: 2 },
+            LinehashError::IndentUnderflow {
+                line_no: 2,
+                amount: 2,
+                available: 1,
+                kind: "spaces",
+            },
+            LinehashError::MixedIndentation { line_no: 3 },
             LinehashError::InvalidPattern {
                 pattern: "(".into(),
                 message: "unclosed group".into(),
+            },
+            LinehashError::DiffHunkMismatch { hunk_line: 12 },
+            LinehashError::DiffFileMismatch {
+                diff_file: "a/demo.txt".into(),
+                given_file: "demo.txt".into(),
             },
             LinehashError::PatchFailed {
                 op_index: 1,

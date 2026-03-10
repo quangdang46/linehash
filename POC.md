@@ -1,24 +1,61 @@
 # POC: linehash
 
 > Proof of concept — hash-tagged line reading + hash-anchored editing.
-> Demonstrates zero str_replace failures on a real edit benchmark.
+> Demonstrates why anchor-based edits are more reliable than `str_replace` when whitespace differs.
 
 ---
 
 ## POC Goal
 
 Prove:
-1. Line hashing is stable and fast
+1. Line hashing is stable and fast enough for a simple CLI workflow
 2. Edit-by-hash produces correct file output
 3. Stale hash detection works reliably
-4. Claude Code can be instructed to use this workflow
+4. Bare-hash ambiguity is detectable and recoverable
+5. Claude Code can be instructed to use this workflow
 
 ---
 
 ## POC Scope
 
 Pure Node.js — no dependencies except built-ins.
-This is the simplest POC in the suite.
+This POC is intentionally small and isolated from the Rust workspace.
+
+Implemented files:
+- `poc/linehash.js`
+- `poc/benchmark.js`
+
+---
+
+## POC Behavior
+
+The implemented Node POC supports:
+- `read <file> [--json]`
+- `edit <file> <hash-or-line:hash> <new content>`
+- `edit <file> <start-line:hash>..<end-line:hash> <new content>`
+- `insert <file> <hash-or-line:hash> <new line>`
+
+### Hash semantics
+
+The POC uses a 2-character MD5-derived hash of the raw line content:
+
+```javascript
+crypto.createHash('md5').update(content, 'utf8').digest('hex').slice(-2)
+```
+
+Important notes:
+- Hashes are **whitespace-sensitive**
+- Leading and trailing spaces affect the hash
+- This matches the current tool behavior better than the older `trim()`-based draft
+- The production Rust tool uses `xxhash-rust`, not MD5
+
+### Safety behavior
+
+The POC implements the same core safety properties as the main tool:
+- qualified anchors like `2:92` fail if line 2 changed
+- bare hashes like `92` fail if they match multiple lines
+- range edits require qualified anchors on both ends
+- newline style and trailing newline are preserved when rewriting files
 
 ---
 
@@ -26,159 +63,53 @@ This is the simplest POC in the suite.
 
 ### `poc/linehash.js`
 
+Key responsibilities:
+1. Read a file and assign each line a short content hash
+2. Print `line:hash| content` output for agents/humans
+3. Resolve anchors safely before editing
+4. Reject stale qualified anchors
+5. Reject ambiguous bare hashes
+6. Support single-line edit, range edit, and insert-after
+
+Current implementation summary:
+
 ```javascript
-import fs from 'fs'
-import crypto from 'crypto'
+#!/usr/bin/env node
+'use strict'
 
-// ─── 1. Hash function ─────────────────────────────────────────────────────────
-// 2-char truncated hash of trimmed line content
-// Using MD5 for POC (production will use xxHash via Rust)
+const fs = require('fs')
+const crypto = require('crypto')
 
-function hashLine(content) {
-  return crypto.createHash('md5').update(content.trim()).digest('hex').slice(0, 2)
+function shortHash(content) {
+  return crypto.createHash('md5').update(content, 'utf8').digest('hex').slice(-2)
 }
 
-// ─── 2. Read file with hash tags ──────────────────────────────────────────────
-
-function readWithHashes(filePath) {
-  const lines = fs.readFileSync(filePath, 'utf8').split('\n')
-  return lines.map((content, i) => ({
-    n: i + 1,
-    hash: hashLine(content),
-    content
-  }))
+function readDocument(filePath) {
+  // read file, preserve newline style, return:
+  // { file, newline, trailing_newline, lines: [{ n, hash, content }] }
 }
 
-function formatForClaude(lines) {
-  return lines.map(l => `${l.n}:${l.hash}| ${l.content}`).join('\n')
+function resolveAnchor(doc, anchorText) {
+  // supports:
+  // - bare hash: "92"
+  // - qualified hash: "2:92"
+  // rejects:
+  // - missing hash
+  // - ambiguous bare hash
+  // - stale qualified hash
 }
 
-// ─── 3. Edit by hash ──────────────────────────────────────────────────────────
-
-function editByHash(filePath, hashRef, newContent) {
-  const lines = readWithHashes(filePath)
-
-  // Parse hash ref: "2:f1" or just "f1"
-  let targetLine = null
-  if (hashRef.includes(':')) {
-    const [lineNum, hash] = hashRef.split(':')
-    targetLine = lines.find(l => l.n === parseInt(lineNum) && l.hash === hash)
-    if (!targetLine) {
-      // Check if line exists but hash changed (stale read)
-      const lineExists = lines.find(l => l.n === parseInt(lineNum))
-      if (lineExists) {
-        throw new Error(
-          `Stale hash: line ${lineNum} content changed since last read\n` +
-          `Expected: ${hash}, Got: ${lineExists.hash}\n` +
-          `Hint: re-read with 'linehash read ${filePath}'`
-        )
-      }
-      throw new Error(`Hash ${hashRef} not found in ${filePath}`)
-    }
-  } else {
-    // Bare hash — check for ambiguity
-    const matches = lines.filter(l => l.hash === hashRef)
-    if (matches.length === 0) throw new Error(`Hash '${hashRef}' not found`)
-    if (matches.length > 1) {
-      const refs = matches.map(l => `${l.n}:${l.hash}`).join(', ')
-      throw new Error(
-        `Ambiguous hash '${hashRef}' matches lines: ${refs}\n` +
-        `Use line-qualified hash, e.g. ${matches[0].n}:${hashRef}`
-      )
-    }
-    targetLine = matches[0]
-  }
-
-  // Apply edit
-  const newLines = lines.map(l =>
-    l.n === targetLine.n ? newContent : l.content
-  )
-
-  fs.writeFileSync(filePath, newLines.join('\n'), 'utf8')
-  console.log(`✓ Edited line ${targetLine.n} (was ${targetLine.hash})`)
+function editCommand(filePath, anchorOrRange, newContent) {
+  // supports single-line and qualified range edits
 }
 
-// ─── 4. Edit range ────────────────────────────────────────────────────────────
-
-function editRange(filePath, startRef, endRef, newContent) {
-  const lines = readWithHashes(filePath)
-
-  const parseRef = (ref) => {
-    if (ref.includes(':')) {
-      const [n, h] = ref.split(':')
-      return lines.find(l => l.n === parseInt(n) && l.hash === h)
-    }
-    return lines.find(l => l.hash === ref)
-  }
-
-  const start = parseRef(startRef)
-  const end = parseRef(endRef)
-  if (!start) throw new Error(`Start hash ${startRef} not found`)
-  if (!end) throw new Error(`End hash ${endRef} not found`)
-
-  const before = lines.filter(l => l.n < start.n).map(l => l.content)
-  const after = lines.filter(l => l.n > end.n).map(l => l.content)
-  const result = [...before, newContent, ...after]
-
-  fs.writeFileSync(filePath, result.join('\n'), 'utf8')
-  console.log(`✓ Replaced lines ${start.n}–${end.n}`)
-}
-
-// ─── 5. Insert after hash ─────────────────────────────────────────────────────
-
-function insertAfter(filePath, hashRef, newContent) {
-  const lines = readWithHashes(filePath)
-  const target = lines.find(l => `${l.n}:${l.hash}` === hashRef || l.hash === hashRef)
-  if (!target) throw new Error(`Hash ${hashRef} not found`)
-
-  const result = []
-  for (const line of lines) {
-    result.push(line.content)
-    if (line.n === target.n) result.push(newContent)
-  }
-
-  fs.writeFileSync(filePath, result.join('\n'), 'utf8')
-  console.log(`✓ Inserted after line ${target.n}`)
-}
-
-// ─── 6. CLI ───────────────────────────────────────────────────────────────────
-
-const [,, command, ...args] = process.argv
-
-try {
-  if (command === 'read') {
-    const lines = readWithHashes(args[0])
-    if (args.includes('--json')) {
-      console.log(JSON.stringify({ file: args[0], lines }, null, 2))
-    } else {
-      console.log(formatForClaude(lines))
-    }
-  }
-  else if (command === 'edit') {
-    const [file, hashRef, ...contentParts] = args
-    if (hashRef.includes('..')) {
-      const [start, end] = hashRef.split('..')
-      editRange(file, start, end, contentParts.join(' '))
-    } else {
-      editByHash(file, hashRef, contentParts.join(' '))
-    }
-  }
-  else if (command === 'insert') {
-    const [file, hashRef, ...contentParts] = args
-    insertAfter(file, hashRef, contentParts.join(' '))
-  }
-  else {
-    console.log('Usage:')
-    console.log('  linehash read <file> [--json]')
-    console.log('  linehash edit <file> <hash> <new content>')
-    console.log('  linehash edit <file> <hash_start>..<hash_end> <new content>')
-    console.log('  linehash insert <file> <hash> <new line>')
-  }
-} catch (e) {
-  console.error('Error:', e.message)
-  process.exit(1)
+function insertCommand(filePath, anchorText, newContent) {
+  // inserts after resolved anchor line
 }
 ```
+
+The actual implementation lives in:
+- `poc/linehash.js`
 
 ---
 
@@ -188,100 +119,156 @@ try {
 # No npm install needed — pure Node.js built-ins
 
 # Read a file with hashes
-node poc/linehash.js read src/auth.js
+node poc/linehash.js read /tmp/demo.txt
 
-# Edit line by hash
-node poc/linehash.js read src/auth.js
-# → see "2:f1| const decoded = jwt.verify(token, SECRET)"
-node poc/linehash.js edit src/auth.js 2:f1 "  const decoded = jwt.verify(token, env.SECRET)"
+# Read JSON metadata + lines
+node poc/linehash.js read /tmp/demo.txt --json
 
-# Verify stale detection
-echo "modified" >> src/auth.js
-node poc/linehash.js edit src/auth.js 2:f1 "something"
-# → Error: Stale hash...
+# Example file
+printf 'alpha\nbeta\ngamma\n' > /tmp/demo.txt
+
+# Read anchors
+node poc/linehash.js read /tmp/demo.txt
+# → 1:f9| alpha
+# → 2:92| beta
+# → 3:ea| gamma
+
+# Edit line by qualified anchor
+node poc/linehash.js edit /tmp/demo.txt 2:92 "BETA"
+
+# Insert after a line
+node poc/linehash.js insert /tmp/demo.txt 2:46 "inserted"
+
+# Replace a range with one line
+node poc/linehash.js edit /tmp/demo.txt 2:46..3:19 "merged"
 ```
 
 ---
 
-## POC Benchmark: str_replace vs linehash
+## Verified Safety Checks
 
-Create a test to measure edit failure rates:
+### Stale qualified anchor
+
+```bash
+printf 'alpha\nbeta\ngamma\n' > /tmp/stale.txt
+node poc/linehash.js read /tmp/stale.txt
+# line 2 is 2:92
+
+python - <<'PY'
+from pathlib import Path
+p = Path('/tmp/stale.txt')
+p.write_text('alpha\nBETA\ngamma\n', encoding='utf-8')
+PY
+
+node poc/linehash.js edit /tmp/stale.txt 2:92 "updated"
+# → Error: line 2 content changed since last read in /tmp/stale.txt (expected hash 92, got 46)
+```
+
+### Ambiguous bare hash
+
+```bash
+printf 'line-7\nline-30\n' > /tmp/ambiguous.txt
+node poc/linehash.js edit /tmp/ambiguous.txt 1e changed
+# → Error: hash '1e' matches 2 lines in /tmp/ambiguous.txt (lines 1, 2)
+```
+
+---
+
+## POC Benchmark: `str_replace` vs linehash
+
+The benchmark is a deterministic demo, not a throughput benchmark.
+
+It compares:
+1. `str_replace`-style matching by exact old text
+2. linehash editing by current anchor
 
 ### `poc/benchmark.js`
 
-```javascript
-import fs from 'fs'
-import { execSync } from 'child_process'
+Implemented behavior:
+- create a temporary file
+- intentionally use the wrong whitespace for the `str_replace` case
+- derive the real anchor from `readDocument(...)`
+- edit by anchor
+- confirm the file changed as expected
+- clean up the temp directory
 
-// Simulate Claude Code's str_replace approach
+Core idea:
+
+```javascript
 function strReplace(filePath, oldStr, newStr) {
   const content = fs.readFileSync(filePath, 'utf8')
   if (!content.includes(oldStr)) {
     throw new Error('String to replace not found')
   }
-  fs.writeFileSync(filePath, content.replace(oldStr, newStr))
+  fs.writeFileSync(filePath, content.replace(oldStr, newStr), 'utf8')
 }
 
-// Simulate linehash approach
-function linehashEdit(filePath, hashRef, newContent) {
-  execSync(`node poc/linehash.js edit ${filePath} ${hashRef} "${newContent}"`)
-}
-
-// Test: add extra whitespace (common LLM mistake)
-const ORIGINAL = `function hello() {\n  return "world"\n}`
-const EXTRA_SPACE = `function hello() {\n   return "world"\n}` // 3 spaces instead of 2
-
-fs.writeFileSync('/tmp/test.js', ORIGINAL)
-
-// str_replace fails when whitespace is wrong
-try {
-  strReplace('/tmp/test.js', EXTRA_SPACE, '  return "universe"')
-  console.log('str_replace: ✓ success')
-} catch (e) {
-  console.log('str_replace: ✗ FAILED —', e.message)
-}
-
-// linehash doesn't care about whitespace — uses hash
-// (read the file first to get hash, then edit)
-fs.writeFileSync('/tmp/test.js', ORIGINAL)
-execSync('node poc/linehash.js read /tmp/test.js')
-// → 2:xx| return "world"   (hash is content-based, not whitespace-sensitive)
-execSync('node poc/linehash.js edit /tmp/test.js 2:xx \'  return "universe"\'')
-console.log('linehash: ✓ success (whitespace irrelevant)')
+const doc = readDocument(filePath)
+const anchor = `${doc.lines[1].n}:${doc.lines[1].hash}`
+editCommand(filePath, anchor, '  return "universe"')
 ```
 
 ---
 
 ## Expected Benchmark Output
 
-```
+```text
 str_replace: ✗ FAILED — String to replace not found
-linehash:    ✓ success (whitespace irrelevant)
+Edited line 2.
+linehash:    ✓ success (anchor-based edit works)
+anchor used: 2:26
 ```
+
+Note:
+- the exact anchor value is content-dependent
+- `2:26` is an example from the verified run, not a hard-coded constant
 
 ---
 
 ## Key Insight for Claude Code
 
-With `CLAUDE.md` instruction:
+With a `CLAUDE.md` instruction like:
+
 ```markdown
-Use `linehash read <file>` instead of the Read tool.
-Use `linehash edit <file> <hash> <content>` instead of str_replace.
-Never reproduce old content — only reference the hash.
+Use `linehash read <file>` instead of reproducing old content by memory.
+Use `linehash edit <file> <line:hash> <content>` instead of fragile text replacement.
+Prefer qualified anchors when possible.
+If an edit fails as stale or ambiguous, re-read and retry with a fresh anchor.
 ```
 
-Claude Code's edit failure rate drops to near zero because:
-1. It never needs to remember exact whitespace
-2. It never needs to reproduce old content
-3. Hash mismatch catches stale reads before corruption
+Claude Code edit reliability improves because:
+1. It does not need to reproduce exact old text just to locate the edit target
+2. Qualified anchors detect stale reads before corruption
+3. Bare-hash ambiguity can be surfaced explicitly
+4. The edit payload is just the anchor plus new content
+
+---
+
+## Relationship to the Rust tool
+
+This Node POC is intentionally minimal.
+
+Differences from the Rust implementation:
+- Node POC uses MD5-derived short hashes
+- Rust uses `xxhash-rust`
+- Rust includes many more commands (`delete`, `verify`, `grep`, `patch`, `watch`, etc.)
+- Rust has fuller guard and receipt support
+
+Shared ideas:
+- `line:hash| content` read format
+- short content hashes as anchors
+- stale qualified-anchor rejection
+- ambiguous bare-hash rejection
+- range replacement collapsing multiple lines into one line
 
 ---
 
 ## Next Steps (Production Rust)
 
-1. Replace MD5 with `xxhash-rust` (10x faster, better distribution)
-2. Handle Windows CRLF line endings
-3. Unicode-aware line splitting
-4. Atomic file writes (write to temp → rename)
-5. `linehash undo` via `.linehash/history/` backup
-6. Performance: 10k line file should read + hash in < 5ms
+The main Rust tool already covers far more than this POC. Remaining production-oriented work belongs there rather than in `poc/`.
+
+Potential future work:
+1. `linehash undo` via `.linehash/history/` backup
+2. More real-world integration testing against larger codebases
+3. Additional agent workflow guidance in `CLAUDE.md`
+4. Performance measurement against larger files and patch workflows

@@ -1,0 +1,7 @@
+---
+source: crates/core/tests/snapshots.rs
+assertion_line: 123
+expression: normalized
+---
+Error: line 2 content changed since last read in <fixture> (expected hash 89, got 6d); hash still exists at line(s) 3
+Hint: re-read the file with `linehash read <file>`; if the hash moved, use the reported line(s) and retry with a fresh qualified anchor

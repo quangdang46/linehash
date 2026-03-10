@@ -107,3 +107,52 @@ fn snapshot_mixed_newline_error_output() {
     let normalized = normalize_path(&stderr, &fixture_arg, "<fixture>");
     assert_snapshot!("read_mixed_newlines_error", normalized);
 }
+
+#[test]
+fn snapshot_stale_anchor_error_output() {
+    let file = support::tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let stale_anchor = format!("2:{}", parsed["lines"][1]["hash"].as_str().unwrap());
+    std::fs::write(&file, "alpha\ngamma\nbeta\n").unwrap();
+
+    let (_stdout, stderr, code) = run_linehash(&["edit", &file_arg, &stale_anchor, "BETA"]);
+
+    assert_eq!(code, 1);
+    let normalized = normalize_path(&stderr, &file_arg, "<fixture>");
+    assert_snapshot!("edit_stale_anchor_error", normalized);
+}
+
+#[test]
+fn snapshot_ambiguous_hash_error_output() {
+    let (first, second) = find_collision_pair();
+    let file = support::tmpfile(&format!("{first}\nunique\n{second}\n"));
+    let file_arg = file.to_string_lossy().into_owned();
+    let parsed = parse_json(&["read", &file_arg, "--json"]);
+    let ambiguous = parsed["lines"][0]["hash"].as_str().unwrap();
+
+    let (_stdout, stderr, code) = run_linehash(&["edit", &file_arg, ambiguous, "updated"]);
+
+    assert_eq!(code, 1);
+    let normalized = normalize_path(&stderr, &file_arg, "<fixture>");
+    assert_snapshot!("edit_ambiguous_hash_error", normalized);
+}
+
+fn find_collision_pair() -> (String, String) {
+    use std::collections::HashMap;
+
+    let mut seen: HashMap<String, String> = HashMap::new();
+    for i in 0..10_000 {
+        let candidate = format!("line-{i}");
+        let tmp = support::tmpfile(&candidate);
+        let tmp_arg = tmp.to_string_lossy().into_owned();
+        let parsed = parse_json(&["read", &tmp_arg, "--json"]);
+        let short = parsed["lines"][0]["hash"].as_str().unwrap().to_owned();
+        if let Some(existing) = seen.insert(short, candidate.clone()) {
+            if existing != candidate {
+                return (existing, candidate);
+            }
+        }
+    }
+    panic!("failed to find ambiguous short-hash fixture");
+}

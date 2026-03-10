@@ -630,6 +630,18 @@ fn delete_last_remaining_line_produces_empty_file() {
 }
 
 #[test]
+fn edit_preserves_missing_trailing_newline() {
+    let file = tmpfile("alpha\nbeta");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&["edit", &file_arg, &anchor, "gamma"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(fs::read(&file).unwrap(), b"alpha\ngamma");
+}
+
+#[test]
 fn swap_exchanges_two_lines() {
     let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
     let file_arg = file.to_string_lossy().into_owned();
@@ -663,6 +675,25 @@ fn swap_dry_run_reports_change_without_writing_file() {
         fs::read_to_string(&file).unwrap(),
         "alpha\nbeta\ngamma\ndelta\n"
     );
+}
+
+#[test]
+fn swap_round_trips_back_to_original_bytes() {
+    let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let original = fs::read(&file).unwrap();
+
+    let anchor_a = anchor_from_file(&file_arg, 2);
+    let anchor_b = anchor_from_file(&file_arg, 4);
+    let (_stdout, stderr, code) = run_linehash(&["swap", &file_arg, &anchor_a, &anchor_b]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    let anchor_a = anchor_from_file(&file_arg, 2);
+    let anchor_b = anchor_from_file(&file_arg, 4);
+    let (_stdout, stderr, code) = run_linehash(&["swap", &file_arg, &anchor_a, &anchor_b]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    assert_eq!(fs::read(&file).unwrap(), original);
 }
 
 #[test]

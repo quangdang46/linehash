@@ -522,7 +522,9 @@ fn write_dry_run<W: Write, E: Write>(
     match ctx.output_mode() {
         OutputMode::Json => output::print_read_json(ctx.stdout(), doc).map_err(LinehashError::from),
         OutputMode::Pretty => {
-            let dry_run_message = summary.success_message().replacen("Applied", "Would apply", 1);
+            let dry_run_message = summary
+                .success_message()
+                .replacen("Applied", "Would apply", 1);
             output::write_success_line(ctx, &dry_run_message)?;
             for action in &summary.actions {
                 output::write_success_line(ctx, &format!("  - {action}"))?;

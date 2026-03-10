@@ -60,7 +60,9 @@ pub enum LinehashError {
     #[error("range start (line {start}) is after range end (line {end})")]
     InvalidIndentRange { start: usize, end: usize },
 
-    #[error("dedent by {amount} would underflow line {line_no} (only {available} leading {kind} available)")]
+    #[error(
+        "dedent by {amount} would underflow line {line_no} (only {available} leading {kind} available)"
+    )]
     IndentUnderflow {
         line_no: usize,
         amount: usize,
@@ -71,7 +73,9 @@ pub enum LinehashError {
     #[error("range uses mixed indentation styles (spaces and tabs) at line {line_no}")]
     MixedIndentation { line_no: usize },
 
-    #[error("could not find balanced block boundary from line {line_no} — check for unmatched braces")]
+    #[error(
+        "could not find balanced block boundary from line {line_no} — check for unmatched braces"
+    )]
     UnbalancedBlock { line_no: usize },
 
     #[error("block language is ambiguous at line {line_no} — use an explicit range anchor instead")]
@@ -84,7 +88,10 @@ pub enum LinehashError {
     DiffHunkMismatch { hunk_line: usize },
 
     #[error("diff targets '{diff_file}' but file argument is '{given_file}'")]
-    DiffFileMismatch { diff_file: String, given_file: String },
+    DiffFileMismatch {
+        diff_file: String,
+        given_file: String,
+    },
 
     #[error("explode target '{path}' already exists — use --force to overwrite it")]
     ExplodeTargetExists { path: String },
@@ -141,9 +148,9 @@ impl LinehashError {
             LinehashError::AmbiguousHash { .. } => {
                 Some("use a line-qualified hash like '2:f1' to disambiguate")
             }
-            LinehashError::StaleAnchor { .. } => {
-                Some("re-read the file with `linehash read <file>`; if the hash moved, use the reported line(s) and retry with a fresh qualified anchor")
-            }
+            LinehashError::StaleAnchor { .. } => Some(
+                "re-read the file with `linehash read <file>`; if the hash moved, use the reported line(s) and retry with a fresh qualified anchor",
+            ),
             LinehashError::StaleFile { .. } => Some(
                 "re-read the file metadata and retry with fresh --expect-mtime/--expect-inode values",
             ),
@@ -159,9 +166,9 @@ impl LinehashError {
             LinehashError::MixedIndentation { .. } => {
                 Some("normalize indentation in the target range before retrying the command")
             }
-            LinehashError::UnbalancedBlock { .. } => {
-                Some("check the surrounding braces or block delimiters and retry on a well-formed file")
-            }
+            LinehashError::UnbalancedBlock { .. } => Some(
+                "check the surrounding braces or block delimiters and retry on a well-formed file",
+            ),
             LinehashError::AmbiguousBlockLanguage { .. } => {
                 Some("rename the file to a supported extension or pass an explicit range instead")
             }
@@ -175,18 +182,18 @@ impl LinehashError {
             LinehashError::ExplodeTargetExists { .. } => {
                 Some("remove the output directory first or rerun with --force")
             }
-            LinehashError::ImplodeMissingMeta { .. } => {
-                Some("run `linehash explode <file> --out <dir>` first or restore the missing .meta.json")
-            }
+            LinehashError::ImplodeMissingMeta { .. } => Some(
+                "run `linehash explode <file> --out <dir>` first or restore the missing .meta.json",
+            ),
             LinehashError::ImplodeInvalidMeta { .. } => {
                 Some("recreate the exploded directory from a fresh `linehash explode` and retry")
             }
             LinehashError::ImplodeDirtyDirectory { .. } => {
                 Some("remove unexpected files from the explode directory and retry the implode")
             }
-            LinehashError::ImplodeMissingLineFile { .. } => {
-                Some("restore the missing line file or regenerate the explode directory before retrying")
-            }
+            LinehashError::ImplodeMissingLineFile { .. } => Some(
+                "restore the missing line file or regenerate the explode directory before retrying",
+            ),
             LinehashError::PatchFailed { .. } => {
                 Some("fix the failing patch operation and retry the transaction")
             }
@@ -379,28 +386,34 @@ mod tests {
 
     #[test]
     fn implode_errors_have_recovery_hints() {
-        assert!(LinehashError::ImplodeMissingMeta {
-            path: "out".into()
-        }
-        .hint()
-        .is_some());
-        assert!(LinehashError::ImplodeInvalidMeta {
-            path: "out/.meta.json".into(),
-            reason: "bad".into()
-        }
-        .hint()
-        .is_some());
-        assert!(LinehashError::ImplodeDirtyDirectory {
-            path: "out".into(),
-            entry: "notes.txt".into()
-        }
-        .hint()
-        .is_some());
-        assert!(LinehashError::ImplodeMissingLineFile {
-            path: "out".into(),
-            line_no: 2
-        }
-        .hint()
-        .is_some());
+        assert!(
+            LinehashError::ImplodeMissingMeta { path: "out".into() }
+                .hint()
+                .is_some()
+        );
+        assert!(
+            LinehashError::ImplodeInvalidMeta {
+                path: "out/.meta.json".into(),
+                reason: "bad".into()
+            }
+            .hint()
+            .is_some()
+        );
+        assert!(
+            LinehashError::ImplodeDirtyDirectory {
+                path: "out".into(),
+                entry: "notes.txt".into()
+            }
+            .hint()
+            .is_some()
+        );
+        assert!(
+            LinehashError::ImplodeMissingLineFile {
+                path: "out".into(),
+                line_no: 2
+            }
+            .hint()
+            .is_some()
+        );
     }
 }

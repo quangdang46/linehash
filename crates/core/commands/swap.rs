@@ -75,8 +75,14 @@ fn write_dry_run<W: Write, E: Write>(
     summary: &SwapSummary,
 ) -> Result<(), LinehashError> {
     output::write_success_line(ctx, &summary.preview_message())?;
-    output::write_success_line(ctx, &format!("  {} ↔ {:?}", summary.line_a_no, summary.line_b_content))?;
-    output::write_success_line(ctx, &format!("  {} ↔ {:?}", summary.line_b_no, summary.line_a_content))?;
+    output::write_success_line(
+        ctx,
+        &format!("  {} ↔ {:?}", summary.line_a_no, summary.line_b_content),
+    )?;
+    output::write_success_line(
+        ctx,
+        &format!("  {} ↔ {:?}", summary.line_b_no, summary.line_a_content),
+    )?;
     output::write_success_line(ctx, "No file was written.").map_err(LinehashError::from)
 }
 
@@ -163,8 +169,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(fs::read_to_string(path).unwrap(), "alpha\ndelta\ngamma\nbeta\n");
-        assert_eq!(String::from_utf8(stdout).unwrap(), "Swapped lines 2 and 4.\n");
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "alpha\ndelta\ngamma\nbeta\n"
+        );
+        assert_eq!(
+            String::from_utf8(stdout).unwrap(),
+            "Swapped lines 2 and 4.\n"
+        );
         assert!(stderr.is_empty());
     }
 
@@ -190,7 +202,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(fs::read_to_string(path).unwrap(), "alpha\nbeta\ngamma\ndelta\n");
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "alpha\nbeta\ngamma\ndelta\n"
+        );
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
             "Would swap line 1 with line 3:\n  1 ↔ \"gamma\"\n  3 ↔ \"alpha\"\nNo file was written.\n"
@@ -220,10 +235,15 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(error, LinehashError::PatchFailed { op_index: 0, .. }));
-        assert!(error
-            .to_string()
-            .contains("source and target must resolve to different lines"));
+        assert!(matches!(
+            error,
+            LinehashError::PatchFailed { op_index: 0, .. }
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("source and target must resolve to different lines")
+        );
     }
 
     #[test]

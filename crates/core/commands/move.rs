@@ -82,7 +82,10 @@ struct MoveSummary {
 
 impl MoveSummary {
     fn success_message(&self) -> String {
-        format!("Moved line {} to line {}.", self.source_line, self.inserted_line)
+        format!(
+            "Moved line {} to line {}.",
+            self.source_line, self.inserted_line
+        )
     }
 
     fn preview_message(&self) -> String {
@@ -167,8 +170,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(fs::read_to_string(path).unwrap(), "alpha\ngamma\ndelta\nbeta\n");
-        assert_eq!(String::from_utf8(stdout).unwrap(), "Moved line 2 to line 4.\n");
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "alpha\ngamma\ndelta\nbeta\n"
+        );
+        assert_eq!(
+            String::from_utf8(stdout).unwrap(),
+            "Moved line 2 to line 4.\n"
+        );
         assert!(stderr.is_empty());
     }
 
@@ -195,7 +204,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(fs::read_to_string(path).unwrap(), "alpha\nbeta\ngamma\ndelta\n");
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "alpha\nbeta\ngamma\ndelta\n"
+        );
         assert_eq!(
             String::from_utf8(stdout).unwrap(),
             "Would move line 4 before line 2 to line 2:\n  ~ \"delta\"\nNo file was written.\n"
@@ -226,10 +238,15 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(error, LinehashError::PatchFailed { op_index: 0, .. }));
-        assert!(error
-            .to_string()
-            .contains("source and target must resolve to different lines"));
+        assert!(matches!(
+            error,
+            LinehashError::PatchFailed { op_index: 0, .. }
+        ));
+        assert!(
+            error
+                .to_string()
+                .contains("source and target must resolve to different lines")
+        );
     }
 
     #[test]

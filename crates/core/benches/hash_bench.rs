@@ -4,12 +4,12 @@ use std::path::Path;
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
+#[path = "../document.rs"]
+mod document;
 #[path = "../error.rs"]
 mod error;
 #[path = "../hash.rs"]
 mod hash;
-#[path = "../document.rs"]
-mod document;
 
 use document::Document;
 

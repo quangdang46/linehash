@@ -178,7 +178,11 @@ pub fn print_stats(writer: &mut impl Write, stats: &FileStats) -> io::Result<()>
     writeln!(writer, "Collisions: {}", stats.collision_count)?;
     writeln!(writer, "Collision pairs: {}", stats.collision_pairs.len())?;
     writeln!(writer, "Est. read tokens: ~{}", stats.estimated_read_tokens)?;
-    writeln!(writer, "Hash length advice: {}-char recommended", stats.hash_length_advice)?;
+    writeln!(
+        writer,
+        "Hash length advice: {}-char recommended",
+        stats.hash_length_advice
+    )?;
     writeln!(writer, "Suggested --context: {}", stats.suggested_context_n)?;
     writeln!(writer, "Note: v1 anchors still use fixed 2-char hashes.")
 }

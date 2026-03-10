@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::commands::common::atomic_write;
 use crate::cli::ImplodeCmd;
+use crate::commands::common::atomic_write;
 use crate::context::CommandContext;
 use crate::document::{Document, NewlineStyle};
 use crate::error::LinehashError;
@@ -27,7 +27,8 @@ pub fn run<W: Write, E: Write>(
                 cmd.out.display()
             ),
         )?;
-        return output::write_success_line(ctx, "No file was written.").map_err(LinehashError::from);
+        return output::write_success_line(ctx, "No file was written.")
+            .map_err(LinehashError::from);
     }
 
     let report = implode(&cmd.dir, &cmd.out)?;
@@ -83,12 +84,11 @@ fn build_implode_plan(dir: &Path) -> Result<ImplodePlan, LinehashError> {
         }
     })?;
 
-    let meta: ExplodeMeta = serde_json::from_slice(&meta_bytes).map_err(|error| {
-        LinehashError::ImplodeInvalidMeta {
+    let meta: ExplodeMeta =
+        serde_json::from_slice(&meta_bytes).map_err(|error| LinehashError::ImplodeInvalidMeta {
             path: meta_path.display().to_string(),
             reason: error.to_string(),
-        }
-    })?;
+        })?;
 
     let newline = parse_newline(&meta, &meta_path)?;
     let mut lines = BTreeMap::new();
@@ -156,7 +156,10 @@ fn build_implode_plan(dir: &Path) -> Result<ImplodePlan, LinehashError> {
         if let Some(line_no) = unexpected {
             return Err(LinehashError::ImplodeInvalidMeta {
                 path: dir.display().to_string(),
-                reason: format!("line file {line_no} is outside metadata line_count {}", meta.line_count),
+                reason: format!(
+                    "line file {line_no} is outside metadata line_count {}",
+                    meta.line_count
+                ),
             });
         }
     }
@@ -202,10 +205,12 @@ fn parse_line_filename(name: &str, dir: &Path) -> Result<(usize, String), Lineha
             entry: name.to_owned(),
         });
     };
-    let line_no = line_no.parse::<usize>().map_err(|_| LinehashError::ImplodeDirtyDirectory {
-        path: dir.display().to_string(),
-        entry: name.to_owned(),
-    })?;
+    let line_no = line_no
+        .parse::<usize>()
+        .map_err(|_| LinehashError::ImplodeDirtyDirectory {
+            path: dir.display().to_string(),
+            entry: name.to_owned(),
+        })?;
     let valid_hash = short_hash.len() == 2 && short_hash.chars().all(|ch| ch.is_ascii_hexdigit());
     if line_no == 0 || !valid_hash {
         return Err(LinehashError::ImplodeDirtyDirectory {
@@ -301,7 +306,10 @@ mod tests {
         fs::remove_file(second).unwrap();
 
         let error = implode(&exploded, &restored).unwrap_err();
-        assert!(matches!(error, LinehashError::ImplodeMissingLineFile { line_no: 2, .. }));
+        assert!(matches!(
+            error,
+            LinehashError::ImplodeMissingLineFile { line_no: 2, .. }
+        ));
     }
 
     #[test]
@@ -340,7 +348,11 @@ mod tests {
             trailing_newline: true,
             line_count: 0,
         };
-        fs::write(exploded.join(".meta.json"), serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+        fs::write(
+            exploded.join(".meta.json"),
+            serde_json::to_vec_pretty(&meta).unwrap(),
+        )
+        .unwrap();
 
         let error = implode(&exploded, &restored).unwrap_err();
         assert!(matches!(error, LinehashError::ImplodeInvalidMeta { .. }));

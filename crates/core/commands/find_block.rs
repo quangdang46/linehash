@@ -41,8 +41,14 @@ pub fn run<W: Write, E: Write>(
         OutputMode::Json => output::write_json_success(
             ctx,
             &BlockPayload {
-                start: format!("{}:{}", block.start_line, doc.lines[block.start_index].short_hash),
-                end: format!("{}:{}", block.end_line, doc.lines[block.end_index].short_hash),
+                start: format!(
+                    "{}:{}",
+                    block.start_line, doc.lines[block.start_index].short_hash
+                ),
+                end: format!(
+                    "{}:{}",
+                    block.end_line, doc.lines[block.end_index].short_hash
+                ),
                 line_count: block.line_count(),
                 language: language.name(),
             },
@@ -111,7 +117,8 @@ fn detect_language(doc: &Document, anchor_index: usize) -> Result<BlockLanguage,
             saw_brace = true;
         }
         if looks_like_indent_block_header(line)
-            && next_nonblank_indent(doc, index).is_some_and(|next| next > leading_indent_width(line))
+            && next_nonblank_indent(doc, index)
+                .is_some_and(|next| next > leading_indent_width(line))
         {
             saw_indent = true;
         }
@@ -223,7 +230,9 @@ fn next_nonblank_indent(doc: &Document, from_index: usize) -> Option<usize> {
 }
 
 fn leading_indent_width(line: &str) -> usize {
-    line.chars().take_while(|ch| matches!(ch, ' ' | '\t')).count()
+    line.chars()
+        .take_while(|ch| matches!(ch, ' ' | '\t'))
+        .count()
 }
 
 fn looks_like_indent_block_header(line: &str) -> bool {
@@ -235,7 +244,10 @@ fn is_blank(line: &str) -> bool {
 }
 
 fn is_indent_extension(path: &Path) -> bool {
-    matches!(path.extension().and_then(|ext| ext.to_str()), Some("py" | "yaml" | "yml"))
+    matches!(
+        path.extension().and_then(|ext| ext.to_str()),
+        Some("py" | "yaml" | "yml")
+    )
 }
 
 fn is_brace_extension(path: &Path) -> bool {

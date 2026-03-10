@@ -59,14 +59,19 @@ struct PatchFile {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "op", rename_all = "lowercase")]
 enum PatchOp {
-    Edit { anchor: String, content: String },
+    Edit {
+        anchor: String,
+        content: String,
+    },
     Insert {
         anchor: String,
         content: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         before: Option<bool>,
     },
-    Delete { anchor: String },
+    Delete {
+        anchor: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -110,7 +115,9 @@ fn validate_patch_target(patch: &PatchFile, base: &Path) -> Result<(), LinehashE
         if expected != &actual {
             return Err(LinehashError::PatchFailed {
                 op_index: 0,
-                reason: format!("patch file target {expected:?} does not match command target {actual:?}"),
+                reason: format!(
+                    "patch file target {expected:?} does not match command target {actual:?}"
+                ),
             });
         }
     }
@@ -151,12 +158,19 @@ fn resolve_edit_target(
     op_index: usize,
 ) -> Result<(TargetKind, String), LinehashError> {
     if let Ok(range) = parse_range(anchor) {
-        let (start, end) = resolve_range(&range, base, index).map_err(|error| patch_error(op_index, error))?;
-        return Ok((TargetKind::Lines(start.index..=end.index), anchor.to_string()));
+        let (start, end) =
+            resolve_range(&range, base, index).map_err(|error| patch_error(op_index, error))?;
+        return Ok((
+            TargetKind::Lines(start.index..=end.index),
+            anchor.to_string(),
+        ));
     }
     let parsed = parse_anchor(anchor).map_err(|error| patch_error(op_index, error))?;
     let resolved = resolve(&parsed, base, index).map_err(|error| patch_error(op_index, error))?;
-    Ok((TargetKind::Lines(resolved.index..=resolved.index), anchor.to_string()))
+    Ok((
+        TargetKind::Lines(resolved.index..=resolved.index),
+        anchor.to_string(),
+    ))
 }
 
 fn resolve_insert_target(
@@ -168,9 +182,16 @@ fn resolve_insert_target(
 ) -> Result<(TargetKind, String), LinehashError> {
     let parsed = parse_anchor(anchor).map_err(|error| patch_error(op_index, error))?;
     let resolved = resolve(&parsed, base, index).map_err(|error| patch_error(op_index, error))?;
-    let boundary = if before { resolved.index } else { resolved.index + 1 };
+    let boundary = if before {
+        resolved.index
+    } else {
+        resolved.index + 1
+    };
     let relation = if before { "before" } else { "after" };
-    Ok((TargetKind::Boundary(boundary), format!("{relation} {anchor}")))
+    Ok((
+        TargetKind::Boundary(boundary),
+        format!("{relation} {anchor}"),
+    ))
 }
 
 fn resolve_delete_target(
@@ -181,7 +202,10 @@ fn resolve_delete_target(
 ) -> Result<(TargetKind, String), LinehashError> {
     let parsed = parse_anchor(anchor).map_err(|error| patch_error(op_index, error))?;
     let resolved = resolve(&parsed, base, index).map_err(|error| patch_error(op_index, error))?;
-    Ok((TargetKind::Lines(resolved.index..=resolved.index), anchor.to_string()))
+    Ok((
+        TargetKind::Lines(resolved.index..=resolved.index),
+        anchor.to_string(),
+    ))
 }
 
 fn collect_conflicts(a: &mut [ResolvedOp], b: &mut [ResolvedOp]) -> Vec<ConflictRecord> {
@@ -208,7 +232,9 @@ fn collect_conflicts(a: &mut [ResolvedOp], b: &mut [ResolvedOp]) -> Vec<Conflict
 
 fn overlaps(left: &TargetKind, right: &TargetKind) -> bool {
     match (left, right) {
-        (TargetKind::Lines(a), TargetKind::Lines(b)) => a.start() <= b.end() && b.start() <= a.end(),
+        (TargetKind::Lines(a), TargetKind::Lines(b)) => {
+            a.start() <= b.end() && b.start() <= a.end()
+        }
         (TargetKind::Boundary(a), TargetKind::Boundary(b)) => a == b,
         (TargetKind::Boundary(boundary), TargetKind::Lines(lines))
         | (TargetKind::Lines(lines), TargetKind::Boundary(boundary)) => {

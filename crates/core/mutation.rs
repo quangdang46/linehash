@@ -52,11 +52,7 @@ pub fn delete_line(doc: &mut Document, index: usize) -> Result<(), LinehashError
     Ok(())
 }
 
-pub fn swap_lines(
-    doc: &mut Document,
-    left: usize,
-    right: usize,
-) -> Result<(), LinehashError> {
+pub fn swap_lines(doc: &mut Document, left: usize, right: usize) -> Result<(), LinehashError> {
     ensure_index(doc, left)?;
     ensure_index(doc, right)?;
 
@@ -241,7 +237,8 @@ mod tests {
 
     #[test]
     fn swap_lines_exchanges_contents_and_recomputes_numbers() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let mut doc =
+            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
 
         swap_lines(&mut doc, 1, 3).unwrap();
 
@@ -263,7 +260,8 @@ mod tests {
 
     #[test]
     fn move_line_after_target_adjusts_when_source_is_above_target() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let mut doc =
+            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
 
         let inserted_at = move_line(&mut doc, 1, 3, false).unwrap();
 
@@ -274,7 +272,8 @@ mod tests {
 
     #[test]
     fn move_line_before_target_adjusts_when_source_is_above_target() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let mut doc =
+            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
 
         let inserted_at = move_line(&mut doc, 1, 3, true).unwrap();
 
@@ -285,7 +284,8 @@ mod tests {
 
     #[test]
     fn move_line_before_target_keeps_target_position_when_source_is_below() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let mut doc =
+            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
 
         let inserted_at = move_line(&mut doc, 3, 1, true).unwrap();
 

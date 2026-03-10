@@ -30,14 +30,19 @@ struct PatchFile {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "lowercase")]
 enum PatchOp {
-    Edit { anchor: String, content: String },
+    Edit {
+        anchor: String,
+        content: String,
+    },
     Insert {
         anchor: String,
         content: String,
         #[serde(skip_serializing_if = "is_false")]
         before: bool,
     },
-    Delete { anchor: String },
+    Delete {
+        anchor: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,7 +149,12 @@ fn parse_hunk(lines: &[&str], index: &mut usize) -> Result<Option<Hunk>, Linehas
             " " => HunkLine::Context(content.to_string()),
             "-" => HunkLine::Remove(content.to_string()),
             "+" => HunkLine::Add(content.to_string()),
-            _ => return Err(invalid_diff(*index + 1, "unexpected unified diff line prefix")),
+            _ => {
+                return Err(invalid_diff(
+                    *index + 1,
+                    "unexpected unified diff line prefix",
+                ));
+            }
         };
         hunk_lines.push(parsed);
         *index += 1;
@@ -213,7 +223,11 @@ fn locate_hunk(hunk: &Hunk, doc: &Document) -> Option<usize> {
         .collect::<Vec<_>>();
 
     if needle.is_empty() {
-        return if doc.lines.is_empty() { Some(0) } else { Some((hunk.old_start.saturating_sub(1)).min(doc.lines.len())) };
+        return if doc.lines.is_empty() {
+            Some(0)
+        } else {
+            Some((hunk.old_start.saturating_sub(1)).min(doc.lines.len()))
+        };
     }
 
     let expected = hunk.old_start.saturating_sub(1);
@@ -222,7 +236,11 @@ fn locate_hunk(hunk: &Hunk, doc: &Document) -> Option<usize> {
     }
 
     let lower = expected.saturating_sub(10);
-    let upper = (expected + 10).min(doc.lines.len().saturating_sub(needle.len().saturating_sub(1)));
+    let upper = (expected + 10).min(
+        doc.lines
+            .len()
+            .saturating_sub(needle.len().saturating_sub(1)),
+    );
     (lower..=upper).find(|start| matches_at(doc, *start, &needle))
 }
 
@@ -378,10 +396,13 @@ mod tests {
 
         assert_eq!(patch.file, "src/auth.js");
         assert_eq!(patch.ops.len(), 1);
-        assert_eq!(patch.ops[0], PatchOp::Edit {
-            anchor: format!("2:{}", doc.lines[1].short_hash),
-            content: "BETA".into(),
-        });
+        assert_eq!(
+            patch.ops[0],
+            PatchOp::Edit {
+                anchor: format!("2:{}", doc.lines[1].short_hash),
+                content: "BETA".into(),
+            }
+        );
     }
 
     #[test]
@@ -394,11 +415,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(patch.ops, vec![PatchOp::Insert {
-            anchor: format!("2:{}", doc.lines[1].short_hash),
-            content: "beta".into(),
-            before: true,
-        }]);
+        assert_eq!(
+            patch.ops,
+            vec![PatchOp::Insert {
+                anchor: format!("2:{}", doc.lines[1].short_hash),
+                content: "beta".into(),
+                before: true,
+            }]
+        );
     }
 
     #[test]
@@ -411,14 +435,18 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(patch.ops, vec![PatchOp::Delete {
-            anchor: format!("2:{}", doc.lines[1].short_hash),
-        }]);
+        assert_eq!(
+            patch.ops,
+            vec![PatchOp::Delete {
+                anchor: format!("2:{}", doc.lines[1].short_hash),
+            }]
+        );
     }
 
     #[test]
     fn compiles_mixed_hunk() {
-        let doc = Document::from_str(Path::new("src/auth.js"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let doc =
+            Document::from_str(Path::new("src/auth.js"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
         let patch = compile_patch(
             "+++ b/src/auth.js\n@@ -2,3 +2,3 @@\n-beta\n+BETA\n gamma\n-delta\n+between\n",
             Path::new("src/auth.js"),
@@ -427,14 +455,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(patch.ops.len(), 2);
-        assert_eq!(patch.ops[0], PatchOp::Edit {
-            anchor: format!("2:{}", doc.lines[1].short_hash),
-            content: "BETA".into(),
-        });
-        assert_eq!(patch.ops[1], PatchOp::Edit {
-            anchor: format!("4:{}", doc.lines[3].short_hash),
-            content: "between".into(),
-        });
+        assert_eq!(
+            patch.ops[0],
+            PatchOp::Edit {
+                anchor: format!("2:{}", doc.lines[1].short_hash),
+                content: "BETA".into(),
+            }
+        );
+        assert_eq!(
+            patch.ops[1],
+            PatchOp::Edit {
+                anchor: format!("4:{}", doc.lines[3].short_hash),
+                content: "between".into(),
+            }
+        );
     }
 
     #[test]
@@ -447,7 +481,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(error, LinehashError::DiffHunkMismatch { hunk_line: 2 }));
+        assert!(matches!(
+            error,
+            LinehashError::DiffHunkMismatch { hunk_line: 2 }
+        ));
     }
 
     #[test]
@@ -478,7 +515,8 @@ mod tests {
 
     #[test]
     fn fuzzy_match_allows_shifted_hunk() {
-        let doc = Document::from_str(Path::new("src/auth.js"), "intro\nalpha\nbeta\ngamma\n").unwrap();
+        let doc =
+            Document::from_str(Path::new("src/auth.js"), "intro\nalpha\nbeta\ngamma\n").unwrap();
         let patch = compile_patch(
             "+++ b/src/auth.js\n@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n beta\n",
             Path::new("src/auth.js"),
@@ -486,9 +524,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(patch.ops[0], PatchOp::Edit {
-            anchor: format!("2:{}", doc.lines[1].short_hash),
-            content: "ALPHA".into(),
-        });
+        assert_eq!(
+            patch.ops[0],
+            PatchOp::Edit {
+                anchor: format!("2:{}", doc.lines[1].short_hash),
+                content: "ALPHA".into(),
+            }
+        );
     }
 }

@@ -69,7 +69,10 @@ pub fn append_to_audit_log(receipt: &Receipt, log_path: &Path) -> Result<(), Lin
         fs::create_dir_all(parent)?;
     }
 
-    let mut file = OpenOptions::new().create(true).append(true).open(log_path)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
     serde_json::to_writer(&mut file, receipt)?;
     writeln!(file)?;
     file.flush()?;
@@ -127,7 +130,8 @@ mod tests {
 
         let contents = fs::read_to_string(path).unwrap();
         assert_eq!(contents.lines().count(), 1);
-        let parsed: serde_json::Value = serde_json::from_str(contents.lines().next().unwrap()).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(contents.lines().next().unwrap()).unwrap();
         assert_eq!(parsed["op"], "edit");
     }
 

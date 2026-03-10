@@ -55,7 +55,10 @@ pub fn explode(source: &Path, out_dir: &Path, force: bool) -> Result<ExplodeRepo
         trailing_newline: doc.trailing_newline,
         line_count: doc.lines.len(),
     };
-    fs::write(out_dir.join(".meta.json"), serde_json::to_vec_pretty(&meta)?)?;
+    fs::write(
+        out_dir.join(".meta.json"),
+        serde_json::to_vec_pretty(&meta)?,
+    )?;
 
     Ok(ExplodeReport {
         file_count: doc.lines.len(),
@@ -158,7 +161,10 @@ mod tests {
 
         assert_eq!(report.file_count, 1);
         assert!(!out.join("stale.txt").exists());
-        assert!(out.join(format_filename(1, &doc.lines[0].short_hash)).exists());
+        assert!(
+            out.join(format_filename(1, &doc.lines[0].short_hash))
+                .exists()
+        );
     }
 
     #[test]
@@ -169,7 +175,8 @@ mod tests {
         fs::write(&source, "").unwrap();
 
         let report = explode(&source, &out, false).unwrap();
-        let meta: ExplodeMeta = serde_json::from_slice(&fs::read(out.join(".meta.json")).unwrap()).unwrap();
+        let meta: ExplodeMeta =
+            serde_json::from_slice(&fs::read(out.join(".meta.json")).unwrap()).unwrap();
 
         assert_eq!(report.file_count, 0);
         assert_eq!(meta.line_count, 0);
@@ -184,7 +191,8 @@ mod tests {
         fs::write(&source, "alpha\r\nbeta\r\n").unwrap();
 
         explode(&source, &out, false).unwrap();
-        let meta: ExplodeMeta = serde_json::from_slice(&fs::read(out.join(".meta.json")).unwrap()).unwrap();
+        let meta: ExplodeMeta =
+            serde_json::from_slice(&fs::read(out.join(".meta.json")).unwrap()).unwrap();
 
         assert_eq!(meta.source, source.display().to_string());
         assert_eq!(meta.newline, "crlf");

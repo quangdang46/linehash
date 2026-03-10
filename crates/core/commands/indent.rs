@@ -188,8 +188,14 @@ fn write_dry_run<W: Write, E: Write>(
         OutputMode::Json => output::print_read_json(ctx.stdout(), doc).map_err(LinehashError::from),
         OutputMode::Pretty => {
             let change = match summary.change {
-                IndentChange::Indent(amount) => format!("indent lines {}-{} by {} spaces", summary.start_line, summary.end_line, amount),
-                IndentChange::Dedent(amount) => format!("dedent lines {}-{} by {} spaces", summary.start_line, summary.end_line, amount),
+                IndentChange::Indent(amount) => format!(
+                    "indent lines {}-{} by {} spaces",
+                    summary.start_line, summary.end_line, amount
+                ),
+                IndentChange::Dedent(amount) => format!(
+                    "dedent lines {}-{} by {} spaces",
+                    summary.start_line, summary.end_line, amount
+                ),
             };
             output::write_success_line(ctx, &format!("Would {change}:"))?;
             for change in &summary.changes {

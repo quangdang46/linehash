@@ -240,7 +240,10 @@ fn detect_newline_style(content: &str, path: &Path) -> Result<NewlineStyle, Line
     }
 }
 
-fn collect_collision_pairs(doc: &Document, index: &HashMap<String, Vec<usize>>) -> Vec<(usize, usize)> {
+fn collect_collision_pairs(
+    doc: &Document,
+    index: &HashMap<String, Vec<usize>>,
+) -> Vec<(usize, usize)> {
     let mut pairs = Vec::new();
 
     for positions in index.values().filter(|positions| positions.len() >= 2) {
@@ -436,7 +439,10 @@ mod tests {
             path: "demo.bin".into(),
         };
 
-        assert_eq!(error.hint(), Some("linehash only supports UTF-8 text files"));
+        assert_eq!(
+            error.hint(),
+            Some("linehash only supports UTF-8 text files")
+        );
     }
 
     #[test]
@@ -538,8 +544,11 @@ mod tests {
     #[test]
     fn test_collision_count_and_pairs_correct() {
         let (first, second) = find_collision_pair();
-        let document =
-            Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\nunique\n")).unwrap();
+        let document = Document::from_str(
+            Path::new("demo.txt"),
+            &format!("{first}\n{second}\nunique\n"),
+        )
+        .unwrap();
         let stats = document.compute_stats();
         assert_eq!(stats.collision_count, 2);
         assert_eq!(stats.collision_pairs, vec![(1, 2)]);
@@ -550,7 +559,8 @@ mod tests {
         let short = Document::from_str(Path::new("demo.txt"), "a\n").unwrap();
         let long = Document::from_str(Path::new("demo.txt"), "a very long line indeed\n").unwrap();
         assert!(
-            long.compute_stats().estimated_read_tokens > short.compute_stats().estimated_read_tokens
+            long.compute_stats().estimated_read_tokens
+                > short.compute_stats().estimated_read_tokens
         );
     }
 
@@ -573,11 +583,8 @@ mod tests {
 
     #[test]
     fn test_context_suggestion_minimum_3_with_dense_markers() {
-        let document = Document::from_str(
-            Path::new("demo.txt"),
-            "fn a\nfn b\nfn c\nfn d\n",
-        )
-        .unwrap();
+        let document =
+            Document::from_str(Path::new("demo.txt"), "fn a\nfn b\nfn c\nfn d\n").unwrap();
         assert_eq!(document.compute_stats().suggested_context_n, 3);
     }
 
@@ -592,7 +599,8 @@ mod tests {
         let mut lines = vec![String::from("fn a")];
         lines.extend((0..50).map(|n| format!("line-{n}")));
         lines.push(String::from("fn b"));
-        let document = Document::from_str(Path::new("demo.txt"), &(lines.join("\n") + "\n")).unwrap();
+        let document =
+            Document::from_str(Path::new("demo.txt"), &(lines.join("\n") + "\n")).unwrap();
         assert_eq!(document.compute_stats().suggested_context_n, 20);
     }
 

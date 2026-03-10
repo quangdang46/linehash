@@ -94,14 +94,25 @@ cargo install linehash
 # Read file with hash tags
 linehash read src/auth.js
 
-# Edit by hash anchor
-linehash edit <file> <hash> <new_content>
-linehash edit <file> <hash_start>..<hash_end> <new_content>
-linehash insert <file> <hash> <new_line>     # insert AFTER hash line
-linehash delete <file> <hash>
+# Read just the neighborhood around one or more anchors
+linehash read src/auth.js --anchor 2:f1 --context 2
 
 # View just line numbers + hashes (no content) — for orientation
 linehash index src/auth.js
+
+# Edit by hash anchor
+linehash edit <file> <hash-or-line:hash> <new_content>
+linehash edit <file> <start-line:hash>..<end-line:hash> <new_content>
+linehash insert <file> <hash-or-line:hash> <new_line>     # insert AFTER anchor line
+linehash insert <file> <hash-or-line:hash> <new_line> --before
+linehash delete <file> <hash-or-line:hash>
+
+# Inspect collision/token-budget guidance for large files
+linehash stats src/auth.js
+
+# Watch for live hash changes (v1 defaults to one change event, then exit)
+linehash watch src/auth.js
+linehash watch src/auth.js --continuous
 ```
 
 ## Integration with Claude Code
@@ -111,17 +122,27 @@ Add to your project's `CLAUDE.md`:
 ```markdown
 ## File Editing Rules
 
-ALWAYS use linehash instead of str_replace or write for editing existing files:
+When editing an existing file with linehash:
 
-1. Read: `linehash read <file>` — note the hash tags on each line
-2. Edit: `linehash edit <file> <hash> "<new content>"`
-3. Never reproduce old content. Reference hash only.
+1. Read: `linehash read <file>`
+2. Copy the anchor as `line:hash` (for example `2:f1`) — do not include the trailing `|`
+3. Edit using the anchor only; never reproduce old content just to locate the line
+4. If the file may have changed, prefer `linehash read <file> --json` first and carry `mtime` / `inode` into mutation commands with `--expect-mtime` / `--expect-inode`
+5. If an edit is rejected as stale or ambiguous, re-read and retry with a fresh qualified anchor
 
 Example:
   linehash read src/auth.js
-  # see line 2:f1 has the jwt.verify call
+  # line 2 shows as `2:f1|   const decoded = ...`
   linehash edit src/auth.js 2:f1 "  const decoded = jwt.verify(token, env.SECRET)"
 ```
+
+### Recommended agent workflow
+
+- Use `read` for the full file view.
+- Use `read --anchor ... --context N` when you already know the target anchor and want a smaller local window.
+- Use `index` for fast orientation when content is not needed.
+- Use `stats` when a file is large, collisions are likely, or you want guidance on whether short hashes and small context windows are still ergonomic.
+- Use qualified anchors like `12:ab` whenever possible; they are safer than bare `ab` when collisions or stale reads matter.
 
 ## Output Modes
 
@@ -132,16 +153,25 @@ linehash read src/auth.js
   2:f1|   const decoded = jwt.verify(token, SECRET)
   ...
 
-# JSON — for scripts
+# JSON — for scripts and stale-guard workflows
 linehash read src/auth.js --json
 {
   "file": "src/auth.js",
+  "newline": "lf",
+  "trailing_newline": true,
+  "mtime": 1714001321,
+  "mtime_nanos": 0,
+  "inode": 12345,
   "lines": [
     { "n": 1, "hash": "a3", "content": "function verifyToken(token) {" },
     { "n": 2, "hash": "f1", "content": "  const decoded = jwt.verify(token, SECRET)" },
     ...
   ]
 }
+
+# NDJSON event stream for agents / scripts
+linehash watch src/auth.js --json
+{"timestamp":1714001321,"event":"changed","path":"src/auth.js","changes":[...],"total_lines":847}
 ```
 
 ## Error Handling
@@ -150,18 +180,30 @@ linehash read src/auth.js --json
 # Hash not found
 linehash edit src/auth.js xx "new content"
 Error: hash 'xx' not found in src/auth.js
-Hint: run `linehash read src/auth.js` to get current hashes
+Hint: run `linehash read <file>` to get current hashes
 
 # Ambiguous hash (collision)
 linehash edit src/auth.js f1 "new content"
-Error: hash 'f1' matches 3 lines (lines 2, 14, 67)
-Use line-qualified hash: 2:f1, 14:f1, or 67:f1
+Error: hash 'f1' matches 3 lines in src/auth.js (lines 2, 14, 67)
+Hint: use a line-qualified hash like '2:f1' to disambiguate
 
-# File changed since read (stale hash)
+# File changed since read (stale qualified anchor)
 linehash edit src/auth.js 2:f1 "new content"
-Error: line 2 content changed since last read (expected hash f1, got 3a)
-Hint: re-read the file with `linehash read src/auth.js`
+Error: line 2 content changed since last read in src/auth.js (expected hash f1, got 3a)
+Hint: re-read the file with `linehash read <file>` and retry the edit
+
+# File metadata changed since JSON read / guard capture
+linehash edit src/auth.js 2:f1 "new content" --expect-mtime 1714001321 --expect-inode 12345
+Error: file 'src/auth.js' changed since the last read
+Hint: re-read the file metadata and retry with fresh --expect-mtime/--expect-inode values
 ```
+
+## Recovery loops
+
+- **Stale anchor:** re-run `linehash read <file>` or `linehash read <file> --json`, then retry with a fresh `line:hash` anchor.
+- **Ambiguous hash:** switch from bare `ab` to qualified `12:ab`.
+- **Large file / too much output:** use `index`, `stats`, or `read --anchor ... --context N` instead of a full read.
+- **Concurrent edits:** treat a stale-anchor or stale-file rejection as success of the safety system, not as something to bypass.
 
 ---
 

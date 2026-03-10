@@ -47,6 +47,7 @@ pub fn output_mode_for(command: &Commands) -> OutputMode {
         Commands::Insert(cmd) => flag_mode(cmd.json),
         Commands::Delete(cmd) => flag_mode(cmd.json),
         Commands::Patch(cmd) => flag_mode(cmd.json),
+        Commands::Indent(cmd) => flag_mode(cmd.json),
         Commands::FindBlock(cmd) => flag_mode(cmd.json),
         Commands::Stats(cmd) => flag_mode(cmd.json),
         Commands::FromDiff(cmd) => flag_mode(cmd.json),
@@ -54,7 +55,6 @@ pub fn output_mode_for(command: &Commands) -> OutputMode {
         Commands::Watch(cmd) => flag_mode(cmd.json),
         Commands::Swap(_)
         | Commands::Move(_)
-        | Commands::Indent(_)
         | Commands::Explode(_)
         | Commands::Implode(_) => OutputMode::Pretty,
     }
@@ -71,7 +71,7 @@ fn flag_mode(json: bool) -> OutputMode {
 #[cfg(test)]
 mod tests {
     use super::{OutputMode, output_mode_for};
-    use crate::cli::{Commands, DeleteCmd, EditCmd, ExplodeCmd, InsertCmd, ReadCmd, WatchCmd};
+    use crate::cli::{Commands, DeleteCmd, EditCmd, ExplodeCmd, IndentCmd, InsertCmd, ReadCmd, WatchCmd};
     use std::path::PathBuf;
 
     #[test]
@@ -133,6 +133,23 @@ mod tests {
             anchor: "1:aa".into(),
             content: "new".into(),
             before: false,
+            dry_run: true,
+            receipt: false,
+            audit_log: None,
+            expect_mtime: None,
+            expect_inode: None,
+            json: true,
+        });
+
+        assert_eq!(output_mode_for(&command), OutputMode::Json);
+    }
+
+    #[test]
+    fn supports_json_mode_for_indent() {
+        let command = Commands::Indent(IndentCmd {
+            file: PathBuf::from("demo.txt"),
+            range: "1:aa..2:bb".into(),
+            amount: "+2".into(),
             dry_run: true,
             receipt: false,
             audit_log: None,

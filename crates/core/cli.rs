@@ -207,6 +207,7 @@ pub enum MoveDirection {
 pub struct IndentCmd {
     pub file: PathBuf,
     pub range: String,
+    #[arg(allow_hyphen_values = true)]
     pub amount: String,
     #[arg(long)]
     pub dry_run: bool,
@@ -218,6 +219,8 @@ pub struct IndentCmd {
     pub expect_mtime: Option<i64>,
     #[arg(long)]
     pub expect_inode: Option<u64>,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Parser)]

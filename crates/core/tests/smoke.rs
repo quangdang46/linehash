@@ -1068,6 +1068,106 @@ fn audit_log_append_failure_warns_but_edit_succeeds() {
 }
 
 #[test]
+fn indent_command_updates_file_contents() {
+    let file = tmpfile("alpha\n  beta\n  gamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let (stdout, stderr, code) = run_linehash(&["indent", &file_arg, &format!("{start}..{end}"), "+2"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(stdout, "Indented lines 2-3 by 2 spaces.\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\n    beta\n    gamma\n");
+}
+
+#[test]
+fn indent_dedent_round_trips_back_to_original_bytes() {
+    let file = tmpfile("alpha\n  beta\n  gamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+
+    let (_stdout, stderr, code) = run_linehash(&["indent", &file_arg, &format!("{start}..{end}"), "+2"]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let (_stdout, stderr, code) = run_linehash(&["indent", &file_arg, &format!("{start}..{end}"), "-2"]);
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\n  beta\n  gamma\n");
+}
+
+#[test]
+fn indent_dry_run_reports_change_without_writing_file() {
+    let file = tmpfile("alpha\n  beta\n  gamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let (stdout, stderr, code) = run_linehash(&["indent", &file_arg, &format!("{start}..{end}"), "+2", "--dry-run"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would indent lines 2-3 by 2 spaces:"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\n  beta\n  gamma\n");
+}
+
+#[test]
+fn indent_json_dry_run_returns_proposed_document() {
+    let file = tmpfile("alpha\n  beta\n  gamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let parsed = parse_json(&["indent", &file_arg, &format!("{start}..{end}"), "+2", "--dry-run", "--json"]);
+
+    assert_eq!(parsed["lines"][1]["content"], "    beta");
+    assert_eq!(parsed["lines"][2]["content"], "    gamma");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\n  beta\n  gamma\n");
+}
+
+#[test]
+fn indent_rejects_mixed_indentation_in_range() {
+    let file = tmpfile("alpha\n  beta\n\tgamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let (_stdout, stderr, code) = run_linehash(&["indent", &file_arg, &format!("{start}..{end}"), "+2"]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("mixed indentation styles"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\n  beta\n\tgamma\n");
+}
+
+#[test]
+fn indent_dedent_rejects_underflow_and_names_line() {
+    let file = tmpfile("alpha\n beta\n  gamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let (_stdout, stderr, code) = run_linehash(&["indent", &file_arg, &format!("{start}..{end}"), "-2"]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("dedent by 2 would underflow line 2"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\n beta\n  gamma\n");
+}
+
+#[test]
+fn indent_receipt_reports_modified_lines() {
+    let file = tmpfile("alpha\n  beta\n  gamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let start = anchor_from_file(&file_arg, 2);
+    let end = anchor_from_file(&file_arg, 3);
+    let parsed = parse_json(&["indent", &file_arg, &format!("{start}..{end}"), "+2", "--receipt"]);
+
+    assert_eq!(parsed["op"], "indent");
+    assert_eq!(parsed["changes"][0]["kind"], "Modified");
+    assert_eq!(parsed["changes"][0]["line_no"], 2);
+    assert_eq!(parsed["changes"][0]["after"], "    beta");
+    assert_eq!(parsed["changes"][1]["line_no"], 3);
+}
+
+#[test]
 fn stats_pretty_output_reports_summary_fields() {
     let file = tmpfile("alpha\nbeta\ngamma\n");
     let file_arg = file.to_string_lossy().into_owned();

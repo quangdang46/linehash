@@ -64,13 +64,14 @@ impl Document {
     pub fn load(path: &Path) -> Result<Document, LinehashError> {
         let bytes = fs::read(path)?;
         let path_string = path.display().to_string();
-        let content = String::from_utf8(bytes.clone()).map_err(|_| LinehashError::InvalidUtf8 {
-            path: path_string.clone(),
-        })?;
 
         if bytes.iter().take(8_000).any(|byte| *byte == 0) {
             return Err(LinehashError::BinaryFile { path: path_string });
         }
+
+        let content = String::from_utf8(bytes).map_err(|_| LinehashError::InvalidUtf8 {
+            path: path_string.clone(),
+        })?;
 
         let newline = detect_newline_style(&content, path)?;
         let trailing_newline = content.ends_with('\n');
@@ -410,6 +411,16 @@ mod tests {
     }
 
     #[test]
+    fn test_binary_check_precedes_utf8_error_when_nul_is_present() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("binary-invalid.txt");
+        fs::write(&path, [0xff, 0x00, 0xfe]).unwrap();
+
+        let error = Document::load(&path).unwrap_err();
+        assert!(matches!(error, LinehashError::BinaryFile { .. }));
+    }
+
+    #[test]
     fn test_load_binary_file_fails() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("binary.txt");
@@ -417,6 +428,15 @@ mod tests {
 
         let error = Document::load(&path).unwrap_err();
         assert!(matches!(error, LinehashError::BinaryFile { .. }));
+    }
+
+    #[test]
+    fn test_binary_file_hint_matches_product_wording() {
+        let error = LinehashError::BinaryFile {
+            path: "demo.bin".into(),
+        };
+
+        assert_eq!(error.hint(), Some("linehash only supports UTF-8 text files"));
     }
 
     #[test]

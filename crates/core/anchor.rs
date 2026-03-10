@@ -179,13 +179,25 @@ fn resolve_qualified(
         });
     }
 
-    let _exists_elsewhere = index.get(short);
+    let relocated_suffix = index
+        .get(short)
+        .filter(|matches| !matches.is_empty())
+        .map(|matches| {
+            let lines = matches
+                .iter()
+                .map(|idx| (idx + 1).to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("; hash still exists at line(s) {lines}")
+        })
+        .unwrap_or_default();
     Err(LinehashError::StaleAnchor {
         anchor: format!("{line}:{short}"),
         line,
         expected: short.to_owned(),
         actual: actual.short_hash.clone(),
         path,
+        relocated_suffix,
     })
 }
 
@@ -406,6 +418,26 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(error, LinehashError::StaleAnchor { .. }));
+    }
+
+    #[test]
+    fn test_resolve_qualified_stale_mentions_relocated_hash_when_present() {
+        let doc = sample_doc();
+        let index = doc.build_index();
+        let relocated_hash = doc.lines[0].short_hash.clone();
+        let error = resolve(
+            &Anchor::LineHash {
+                line: 2,
+                short: relocated_hash,
+            },
+            &doc,
+            &index,
+        )
+        .unwrap_err();
+
+        let rendered = error.to_string();
+        assert!(matches!(error, LinehashError::StaleAnchor { .. }));
+        assert!(rendered.contains("hash still exists at line(s) 1"));
     }
 
     #[test]

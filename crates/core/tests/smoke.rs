@@ -94,6 +94,17 @@ fn invalid_anchor_still_errors_for_read_context() {
 }
 
 #[test]
+fn read_binary_fixture_reports_binary_error_with_hint() {
+    let fixture = fixture_path("binary.bin");
+    let fixture_arg = fixture.to_string_lossy().into_owned();
+    let (_stdout, stderr, code) = run_linehash(&["read", &fixture_arg]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("appears to be binary and cannot be edited safely"));
+    assert!(stderr.contains("linehash only supports UTF-8 text files"));
+}
+
+#[test]
 fn verify_all_valid_anchors_exits_zero() {
     let fixture = fixture_path("simple_lf.js");
     let fixture_arg = fixture.to_string_lossy().into_owned();
@@ -140,6 +151,20 @@ fn verify_json_output_is_structured() {
     assert_eq!(parsed[0]["line_no"], 1);
     assert_eq!(parsed[1]["status"], "parse_error");
     assert!(parsed[1]["error"].is_string());
+}
+
+#[test]
+fn verify_stale_anchor_reports_relocated_line_when_hash_still_exists() {
+    let file = tmpfile("alpha\nbeta\ngamma\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let full = parse_json(&["read", &file_arg, "--json"]);
+    let moved_hash = full["lines"][0]["hash"].as_str().unwrap();
+    let stale = format!("2:{moved_hash}");
+    let (stdout, stderr, code) = run_linehash(&["verify", &file_arg, &stale]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("hash still exists at line(s) 1"));
 }
 
 #[test]
@@ -602,6 +627,48 @@ fn delete_last_remaining_line_produces_empty_file() {
     assert_eq!(code, 0, "expected success, got stderr: {stderr}");
     assert!(stderr.is_empty());
     assert_eq!(fs::read_to_string(&file).unwrap(), "");
+}
+
+#[test]
+fn swap_exchanges_two_lines() {
+    let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor_a = anchor_from_file(&file_arg, 2);
+    let anchor_b = anchor_from_file(&file_arg, 4);
+    let (stdout, stderr, code) = run_linehash(&["swap", &file_arg, &anchor_a, &anchor_b]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert_eq!(stdout, "Swapped lines 2 and 4.\n");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\ndelta\ngamma\nbeta\n");
+}
+
+#[test]
+fn swap_dry_run_reports_change_without_writing_file() {
+    let file = tmpfile("alpha\nbeta\ngamma\ndelta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor_a = anchor_from_file(&file_arg, 1);
+    let anchor_b = anchor_from_file(&file_arg, 3);
+    let (stdout, stderr, code) =
+        run_linehash(&["swap", &file_arg, &anchor_a, &anchor_b, "--dry-run"]);
+
+    assert_eq!(code, 0, "expected success, got stderr: {stderr}");
+    assert!(stderr.is_empty());
+    assert!(stdout.contains("Would swap line 1 with line 3:"));
+    assert!(stdout.contains("No file was written."));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\ngamma\ndelta\n");
+}
+
+#[test]
+fn swap_rejects_same_line() {
+    let file = tmpfile("alpha\nbeta\n");
+    let file_arg = file.to_string_lossy().into_owned();
+    let anchor = anchor_from_file(&file_arg, 2);
+    let (_stdout, stderr, code) = run_linehash(&["swap", &file_arg, &anchor, &anchor]);
+
+    assert_eq!(code, 1);
+    assert!(stderr.contains("source and target must resolve to different lines"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), "alpha\nbeta\n");
 }
 
 #[cfg(unix)]

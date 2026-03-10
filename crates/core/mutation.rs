@@ -52,6 +52,26 @@ pub fn delete_line(doc: &mut Document, index: usize) -> Result<(), LinehashError
     Ok(())
 }
 
+pub fn swap_lines(
+    doc: &mut Document,
+    left: usize,
+    right: usize,
+) -> Result<(), LinehashError> {
+    ensure_index(doc, left)?;
+    ensure_index(doc, right)?;
+
+    if left == right {
+        return Err(LinehashError::PatchFailed {
+            op_index: 0,
+            reason: "source and target must resolve to different lines".to_owned(),
+        });
+    }
+
+    doc.lines.swap(left, right);
+    rebuild_line_metadata(doc);
+    Ok(())
+}
+
 pub fn move_line(
     doc: &mut Document,
     source: usize,
@@ -136,7 +156,7 @@ fn ensure_range(doc: &Document, start: usize, end: usize) -> Result<(), Linehash
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_line, insert_line, move_line, replace_line, replace_range_with_line,
+        delete_line, insert_line, move_line, replace_line, replace_range_with_line, swap_lines,
         validate_single_line_content,
     };
     use crate::document::{Document, NewlineStyle};
@@ -217,6 +237,28 @@ mod tests {
         assert!(doc.lines.is_empty());
         assert_eq!(doc.render(), b"");
         assert!(!doc.trailing_newline);
+    }
+
+    #[test]
+    fn swap_lines_exchanges_contents_and_recomputes_numbers() {
+        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+
+        swap_lines(&mut doc, 1, 3).unwrap();
+
+        assert_eq!(doc.render(), b"alpha\ndelta\ngamma\nbeta\n");
+        assert_eq!(doc.lines[1].number, 2);
+        assert_eq!(doc.lines[3].number, 4);
+    }
+
+    #[test]
+    fn swap_lines_rejects_same_source_and_target() {
+        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
+
+        let error = swap_lines(&mut doc, 1, 1).unwrap_err();
+        assert!(matches!(
+            error,
+            LinehashError::PatchFailed { op_index: 0, .. }
+        ));
     }
 
     #[test]

@@ -40,7 +40,7 @@ pub enum LinehashError {
     },
 
     #[error(
-        "line {line} content changed since last read in {path} (expected hash {expected}, got {actual})"
+        "line {line} content changed since last read in {path} (expected hash {expected}, got {actual}){relocated_suffix}"
     )]
     StaleAnchor {
         anchor: String,
@@ -48,6 +48,7 @@ pub enum LinehashError {
         expected: String,
         actual: String,
         path: String,
+        relocated_suffix: String,
     },
 
     #[error("file '{path}' changed since the last read")]
@@ -129,7 +130,7 @@ impl LinehashError {
                 Some("use a line-qualified hash like '2:f1' to disambiguate")
             }
             LinehashError::StaleAnchor { .. } => {
-                Some("re-read the file with `linehash read <file>` and retry the edit")
+                Some("re-read the file with `linehash read <file>`; if the hash moved, use the reported line(s) and retry with a fresh qualified anchor")
             }
             LinehashError::StaleFile { .. } => Some(
                 "re-read the file metadata and retry with fresh --expect-mtime/--expect-inode values",
@@ -256,6 +257,7 @@ mod tests {
                 expected: "aa".into(),
                 actual: "bb".into(),
                 path: "demo.txt".into(),
+                relocated_suffix: String::new(),
             },
             LinehashError::StaleFile {
                 path: "demo.txt".into(),
@@ -310,5 +312,25 @@ mod tests {
     fn not_implemented_reports_command_name() {
         let error = LinehashError::NotImplemented { command: "patch" };
         assert_eq!(error.command(), Some("patch"));
+    }
+
+    #[test]
+    fn stale_anchor_hint_mentions_relocated_lines() {
+        let error = LinehashError::StaleAnchor {
+            anchor: "2:aa".into(),
+            line: 2,
+            expected: "aa".into(),
+            actual: "bb".into(),
+            path: "demo.txt".into(),
+            relocated_suffix: "; hash still exists at line(s) 9".into(),
+        };
+
+        assert_eq!(
+            error.hint(),
+            Some(
+                "re-read the file with `linehash read <file>`; if the hash moved, use the reported line(s) and retry with a fresh qualified anchor"
+            )
+        );
+        assert!(error.to_string().contains("hash still exists at line(s) 9"));
     }
 }

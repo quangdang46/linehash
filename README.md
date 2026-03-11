@@ -5,6 +5,7 @@
 
 `linehash` is a Rust CLI for safe file editing with content-hashed line anchors. It helps Claude Code and other AI coding tools read files, locate lines, apply edits, and reject stale changes before they corrupt code.
 
+
 ## Why linehash
 
 - Built for **Claude Code** and **AI coding agents**
@@ -102,12 +103,25 @@ line content → xxhash32 → take low byte as 2 hex chars
 Pure Rust. No tree-sitter. No LLM. No external dependencies.
 Simplest tool in the suite.
 
+
+
 ## Installation
 
-Install the Rust CLI from crates.io:
+### From GitHub releases
+
+Install the latest release with the generated installer:
 
 ```bash
-cargo install linehash
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/linehash/main/install.sh?$(date +%s)" | bash
+```
+
+
+The installer downloads the matching GitHub release asset for your platform, verifies checksums when available, and can optionally add the install directory to your shell PATH.
+
+### From source
+
+```bash
+cargo install --path crates/core
 ```
 
 ## Usage

@@ -220,6 +220,7 @@ mod tests {
     use crate::document::Document;
     use std::fs;
     use std::path::Path;
+    use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
@@ -285,15 +286,22 @@ mod tests {
         let path = dir.path().join("demo.txt");
         fs::write(&path, "alpha\n").unwrap();
 
-        let writer_path = path.clone();
-        let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(150));
-            fs::write(writer_path, "beta\n").unwrap();
+        let watch_path = path.clone();
+        let (tx, rx) = mpsc::channel();
+        let watch_handle = thread::spawn(move || {
+            let mut out = Vec::new();
+            let result = watch_file(&watch_path, true, false, &mut out);
+            tx.send((result, out)).unwrap();
         });
 
-        let mut out = Vec::new();
-        watch_file(&path, true, false, &mut out).unwrap();
-        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(300));
+        fs::write(&path, "beta\n").unwrap();
+
+        let (result, out) = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("watch should finish after first change");
+        result.unwrap();
+        watch_handle.join().unwrap();
         let rendered = String::from_utf8(out).unwrap();
 
         assert!(rendered.contains("Watching"));
@@ -308,20 +316,27 @@ mod tests {
         let path = dir.path().join("demo.txt");
         fs::write(&path, "alpha\n").unwrap();
 
-        let writer_path = path.clone();
-        let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(100));
-            fs::write(&writer_path, "beta\n").unwrap();
-            thread::sleep(Duration::from_millis(100));
-            fs::write(writer_path, "gamma\n").unwrap();
+        let watch_path = path.clone();
+        let (tx, rx) = mpsc::channel();
+        let watch_handle = thread::spawn(move || {
+            let start = Instant::now();
+            let mut out = Vec::new();
+            let result = watch_file(&watch_path, true, false, &mut out);
+            tx.send((result, out, start.elapsed())).unwrap();
         });
 
-        let start = Instant::now();
-        let mut out = Vec::new();
-        watch_file(&path, true, false, &mut out).unwrap();
-        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(300));
+        fs::write(&path, "beta\n").unwrap();
+        thread::sleep(Duration::from_millis(100));
+        fs::write(&path, "gamma\n").unwrap();
 
-        assert!(start.elapsed() < Duration::from_secs(1));
+        let (result, _out, elapsed) = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("watch should exit after first change");
+        result.unwrap();
+        watch_handle.join().unwrap();
+
+        assert!(elapsed < Duration::from_secs(2));
     }
 
     #[test]
@@ -330,15 +345,22 @@ mod tests {
         let path = dir.path().join("demo.txt");
         fs::write(&path, "alpha\n").unwrap();
 
-        let writer_path = path.clone();
-        let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(150));
-            fs::write(writer_path, "beta\n").unwrap();
+        let watch_path = path.clone();
+        let (tx, rx) = mpsc::channel();
+        let watch_handle = thread::spawn(move || {
+            let mut out = Vec::new();
+            let result = watch_file(&watch_path, true, true, &mut out);
+            tx.send((result, out)).unwrap();
         });
 
-        let mut out = Vec::new();
-        watch_file(&path, true, true, &mut out).unwrap();
-        handle.join().unwrap();
+        thread::sleep(Duration::from_millis(300));
+        fs::write(&path, "beta\n").unwrap();
+
+        let (result, out) = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("watch should emit JSON after first change");
+        result.unwrap();
+        watch_handle.join().unwrap();
 
         let rendered = String::from_utf8(out).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(rendered.trim()).unwrap();

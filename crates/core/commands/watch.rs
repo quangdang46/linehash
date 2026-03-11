@@ -55,8 +55,9 @@ pub fn watch_file(
     let mut old_doc = Document::load(path)?;
     let (tx, rx) = mpsc::channel();
     let mut watcher = new_watcher(tx)?;
+    let watch_root = path.parent().unwrap_or_else(|| Path::new("."));
     watcher
-        .watch(path, RecursiveMode::NonRecursive)
+        .watch(watch_root, RecursiveMode::NonRecursive)
         .map_err(notify_error)?;
 
     if !json {

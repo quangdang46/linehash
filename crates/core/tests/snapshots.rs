@@ -1,7 +1,5 @@
 mod support;
 
-use std::fs;
-
 use insta::{assert_json_snapshot, assert_snapshot};
 use serde_json::Value;
 use support::{fixture_path, parse_json, run_linehash};
@@ -20,12 +18,7 @@ fn normalize_read_json(mut value: Value, fixture_arg: &str) -> Value {
         value["file"] = Value::String("<fixture>".into());
     }
 
-    let expected_newline = if fs::read_to_string(fixture_arg).unwrap().contains("\r\n") {
-        "crlf"
-    } else {
-        "lf"
-    };
-    value["newline"] = Value::String(expected_newline.into());
+    value["newline"] = Value::String("lf".into());
 
     value
 }

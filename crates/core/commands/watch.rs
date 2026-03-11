@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use notify::event::{CreateKind, ModifyKind, RemoveKind};
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Config, EventKind, PollWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 
 use crate::cli::WatchCmd;
@@ -91,10 +91,13 @@ pub fn watch_file(
 
 fn new_watcher(
     tx: mpsc::Sender<Result<notify::Event, notify::Error>>,
-) -> Result<RecommendedWatcher, LinehashError> {
-    notify::recommended_watcher(move |result| {
-        let _ = tx.send(result);
-    })
+) -> Result<PollWatcher, LinehashError> {
+    PollWatcher::new(
+        move |result| {
+            let _ = tx.send(result);
+        },
+        Config::default().with_poll_interval(std::time::Duration::from_millis(100)),
+    )
     .map_err(notify_error)
 }
 

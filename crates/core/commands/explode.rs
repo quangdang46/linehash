@@ -44,8 +44,8 @@ pub fn explode(source: &Path, out_dir: &Path, force: bool) -> Result<ExplodeRepo
     prepare_output_dir(out_dir, force)?;
     let doc = Document::load(source)?;
 
-    for line in &doc.lines {
-        let path = out_dir.join(format_filename(line.number, line.short_hash));
+    for (index, line) in doc.lines.iter().enumerate() {
+        let path = out_dir.join(format_filename(index + 1, line.short_hash));
         fs::write(path, &line.content)?;
     }
 

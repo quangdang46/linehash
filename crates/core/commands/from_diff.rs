@@ -314,7 +314,7 @@ fn emit_block(
     for (offset, content) in added.iter().enumerate().take(shared) {
         let line = doc_line(doc, start + offset)?;
         ops.push(PatchOp::Edit {
-            anchor: format!("{}:{}", line.number, crate::document::format_short_hash(line.short_hash)),
+            anchor: format!("{}:{}", start + offset + 1, crate::document::format_short_hash(line.short_hash)),
             content: content.clone(),
         });
     }
@@ -322,7 +322,7 @@ fn emit_block(
     for offset in shared..removed.len() {
         let line = doc_line(doc, start + offset)?;
         ops.push(PatchOp::Delete {
-            anchor: format!("{}:{}", line.number, crate::document::format_short_hash(line.short_hash)),
+            anchor: format!("{}:{}", start + offset + 1, crate::document::format_short_hash(line.short_hash)),
         });
     }
 
@@ -333,7 +333,7 @@ fn emit_block(
                 let anchor_line = doc_line(doc, start)?;
                 for content in extra.iter().rev() {
                     ops.push(PatchOp::Insert {
-                        anchor: format!("{}:{}", anchor_line.number, crate::document::format_short_hash(anchor_line.short_hash)),
+                        anchor: format!("{}:{}", start + 1, crate::document::format_short_hash(anchor_line.short_hash)),
                         content: content.clone(),
                         before: true,
                     });
@@ -341,7 +341,7 @@ fn emit_block(
             } else if let Some(anchor_line) = doc.lines.last() {
                 for content in extra {
                     ops.push(PatchOp::Insert {
-                        anchor: format!("{}:{}", anchor_line.number, crate::document::format_short_hash(anchor_line.short_hash)),
+                        anchor: format!("{}:{}", doc.lines.len(), crate::document::format_short_hash(anchor_line.short_hash)),
                         content: content.clone(),
                         before: false,
                     });
@@ -353,7 +353,7 @@ fn emit_block(
             let anchor_line = doc_line(doc, start + removed.len() - 1)?;
             for content in extra {
                 ops.push(PatchOp::Insert {
-                    anchor: format!("{}:{}", anchor_line.number, crate::document::format_short_hash(anchor_line.short_hash)),
+                    anchor: format!("{}:{}", start + removed.len(), crate::document::format_short_hash(anchor_line.short_hash)),
                     content: content.clone(),
                     before: false,
                 });

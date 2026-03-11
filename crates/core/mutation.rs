@@ -17,7 +17,7 @@ pub fn replace_line(doc: &mut Document, index: usize, content: &str) -> Result<(
     ensure_index(doc, index)?;
 
     doc.lines[index].content = content.to_owned();
-    refresh_line_metadata(&mut doc.lines[index], index + 1);
+    refresh_line_metadata(&mut doc.lines[index]);
     Ok(())
 }
 
@@ -31,8 +31,7 @@ pub fn replace_range_with_line(
     ensure_range(doc, start, end)?;
 
     doc.lines.splice(start..=end, [new_line_record(content)]);
-    refresh_line_metadata(&mut doc.lines[start], start + 1);
-    renumber_suffix(doc, start + 1);
+    refresh_line_metadata(&mut doc.lines[start]);
     Ok(())
 }
 
@@ -41,8 +40,7 @@ pub fn insert_line(doc: &mut Document, index: usize, content: &str) -> Result<()
     ensure_insert_index(doc, index)?;
 
     doc.lines.insert(index, new_line_record(content));
-    refresh_line_metadata(&mut doc.lines[index], index + 1);
-    renumber_suffix(doc, index + 1);
+    refresh_line_metadata(&mut doc.lines[index]);
     Ok(())
 }
 
@@ -50,7 +48,6 @@ pub fn delete_line(doc: &mut Document, index: usize) -> Result<(), LinehashError
     ensure_index(doc, index)?;
 
     doc.lines.remove(index);
-    renumber_suffix(doc, index);
     Ok(())
 }
 
@@ -66,8 +63,6 @@ pub fn swap_lines(doc: &mut Document, left: usize, right: usize) -> Result<(), L
     }
 
     doc.lines.swap(left, right);
-    doc.lines[left].number = left + 1;
-    doc.lines[right].number = right + 1;
     Ok(())
 }
 
@@ -96,41 +91,17 @@ pub fn move_line(
     };
 
     doc.lines.insert(insert_at, line);
-    renumber_range(doc, source.min(insert_at), source.max(insert_at));
     Ok(insert_at)
 }
 
-fn refresh_line_metadata(line: &mut LineRecord, number: usize) {
-    line.number = number;
+fn refresh_line_metadata(line: &mut LineRecord) {
     line.full_hash = hash::full_hash(&line.content);
     line.short_hash = hash::short_from_full(line.full_hash);
-}
-
-fn renumber_suffix(doc: &mut Document, start: usize) {
-    if start >= doc.lines.len() {
-        return;
-    }
-
-    for (offset, line) in doc.lines[start..].iter_mut().enumerate() {
-        line.number = start + offset + 1;
-    }
-}
-
-fn renumber_range(doc: &mut Document, start: usize, end: usize) {
-    if start >= doc.lines.len() {
-        return;
-    }
-
-    let end = end.min(doc.lines.len() - 1);
-    for index in start..=end {
-        doc.lines[index].number = index + 1;
-    }
 }
 
 fn new_line_record(content: &str) -> LineRecord {
     let full_hash = hash::full_hash(content);
     LineRecord {
-        number: 0,
         content: content.to_owned(),
         full_hash,
         short_hash: hash::short_from_full(full_hash),
@@ -190,7 +161,6 @@ mod tests {
         replace_line(&mut doc, 1, "gamma").unwrap();
 
         assert_eq!(doc.lines[1].content, "gamma");
-        assert_eq!(doc.lines[1].number, 2);
         assert_eq!(doc.newline, original_newline);
         assert_eq!(doc.trailing_newline, original_trailing_newline);
         assert_eq!(doc.render(), b"alpha\ngamma\n");
@@ -219,9 +189,7 @@ mod tests {
 
         assert_eq!(doc.lines.len(), 3);
         assert_eq!(doc.lines[1].content, "beta");
-        assert_eq!(doc.lines[1].number, 2);
         assert_eq!(doc.lines[2].content, "gamma");
-        assert_eq!(doc.lines[2].number, 3);
         assert_eq!(doc.lines[2].short_hash, original_hash);
         assert_eq!(doc.render(), b"alpha\nbeta\ngamma\n");
     }
@@ -245,7 +213,6 @@ mod tests {
         assert_eq!(doc.lines.len(), 2);
         assert_eq!(doc.lines[0].content, "alpha");
         assert_eq!(doc.lines[1].content, "gamma");
-        assert_eq!(doc.lines[1].number, 2);
         assert_eq!(doc.lines[1].short_hash, original_hash);
         assert_eq!(doc.render(), b"alpha\ngamma\n");
     }
@@ -271,8 +238,6 @@ mod tests {
         swap_lines(&mut doc, 1, 3).unwrap();
 
         assert_eq!(doc.render(), b"alpha\ndelta\ngamma\nbeta\n");
-        assert_eq!(doc.lines[1].number, 2);
-        assert_eq!(doc.lines[3].number, 4);
         assert_eq!(doc.lines[1].short_hash, delta_hash);
         assert_eq!(doc.lines[3].short_hash, beta_hash);
     }
@@ -301,7 +266,6 @@ mod tests {
         assert_eq!(doc.render(), b"alpha\ngamma\ndelta\nbeta\n");
         assert_eq!(doc.lines[0].short_hash, alpha_hash);
         assert_eq!(doc.lines[3].short_hash, beta_hash);
-        assert_eq!(doc.lines[3].number, 4);
     }
 
     #[test]
@@ -313,7 +277,6 @@ mod tests {
 
         assert_eq!(inserted_at, 2);
         assert_eq!(doc.render(), b"alpha\ngamma\nbeta\ndelta\n");
-        assert_eq!(doc.lines[2].number, 3);
     }
 
     #[test]
@@ -325,7 +288,6 @@ mod tests {
 
         assert_eq!(inserted_at, 1);
         assert_eq!(doc.render(), b"alpha\ndelta\nbeta\ngamma\n");
-        assert_eq!(doc.lines[1].number, 2);
     }
 
     #[test]

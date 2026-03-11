@@ -79,11 +79,11 @@ pub fn write_json_success<W: Write, E: Write, T: Serialize>(
 
 pub fn print_read(writer: &mut impl Write, doc: &Document) -> io::Result<()> {
     let width = line_number_width(doc);
-    for line in &doc.lines {
+    for (index, line) in doc.lines.iter().enumerate() {
         writeln!(
             writer,
             "{number:>width$}:{hash}| {content}",
-            number = line.number,
+            number = index + 1,
             hash = format_short_hash(line.short_hash),
             content = line.content,
             width = width
@@ -111,8 +111,9 @@ pub fn print_read_json(writer: &mut impl Write, doc: &Document) -> io::Result<()
         lines: doc
             .lines
             .iter()
-            .map(|line| ReadLineOwnedPayload {
-                n: line.number,
+            .enumerate()
+            .map(|(index, line)| ReadLineOwnedPayload {
+                n: index + 1,
                 hash: format_short_hash(line.short_hash),
                 content: &line.content,
             })
@@ -147,7 +148,7 @@ pub fn print_read_context(
             ' '
         };
         let line = &doc.lines[index];
-        let number = line.number.to_string();
+        let number = (index + 1).to_string();
         let padding = width.saturating_sub(number.len());
         writeln!(
             writer,
@@ -166,8 +167,8 @@ pub fn print_read_context(
 }
 
 pub fn print_index(writer: &mut impl Write, doc: &Document) -> io::Result<()> {
-    for line in &doc.lines {
-        writeln!(writer, "{}:{}", line.number, format_short_hash(line.short_hash))?;
+    for (index, line) in doc.lines.iter().enumerate() {
+        writeln!(writer, "{}:{}", index + 1, format_short_hash(line.short_hash))?;
     }
     Ok(())
 }
@@ -178,8 +179,9 @@ pub fn print_index_json(writer: &mut impl Write, doc: &Document) -> io::Result<(
         lines: doc
             .lines
             .iter()
-            .map(|line| IndexLineOwnedPayload {
-                n: line.number,
+            .enumerate()
+            .map(|(index, line)| IndexLineOwnedPayload {
+                n: index + 1,
                 hash: format_short_hash(line.short_hash),
             })
             .collect(),
@@ -216,7 +218,7 @@ pub fn print_grep(writer: &mut impl Write, doc: &Document, indexes: &[usize]) ->
         writeln!(
             writer,
             "{number:>width$}:{hash}| {content}",
-            number = line.number,
+            number = *index + 1,
             hash = format_short_hash(line.short_hash),
             content = line.content,
             width = width
@@ -235,7 +237,7 @@ pub fn write_grep_json<W: Write, E: Write>(
         .map(|index| {
             let line = &doc.lines[*index];
             ReadLineOwnedPayload {
-                n: line.number,
+                n: *index + 1,
                 hash: format_short_hash(line.short_hash),
                 content: &line.content,
             }
@@ -270,10 +272,7 @@ pub fn write_error<W: Write, E: Write>(
 }
 
 fn line_number_width(doc: &Document) -> usize {
-    doc.lines
-        .last()
-        .map(|line| line.number.to_string().len())
-        .unwrap_or(1)
+    doc.lines.len().to_string().len().max(1)
 }
 
 fn newline_name(newline: NewlineStyle) -> &'static str {

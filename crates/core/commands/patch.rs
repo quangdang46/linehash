@@ -505,10 +505,9 @@ fn build_lines(contents: &[String]) -> Vec<LineRecord> {
     contents
         .iter()
         .enumerate()
-        .map(|(index, content)| {
+        .map(|(_index, content)| {
             let full_hash = hash::full_hash(content);
             LineRecord {
-                number: index + 1,
                 content: content.clone(),
                 full_hash,
                 short_hash: hash::short_from_full(full_hash),

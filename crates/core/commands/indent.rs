@@ -35,8 +35,8 @@ pub fn run<W: Write, E: Write>(
         });
     }
 
-    for (idx, line) in doc.lines.iter_mut().enumerate() {
-        line.number = idx + 1;
+    for idx in start.index..=end.index {
+        let line = &mut doc.lines[idx];
         line.full_hash = crate::hash::full_hash(&line.content);
         line.short_hash = crate::hash::short_from_full(line.full_hash);
     }

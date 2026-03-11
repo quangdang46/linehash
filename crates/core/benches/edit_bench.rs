@@ -38,6 +38,12 @@ fn linehash_edit_once(scenario: &EditScenario) -> Result<String, LinehashError> 
     Ok(String::from_utf8(doc.render()).expect("render benchmark document"))
 }
 
+fn linehash_parse_once(scenario: &EditScenario) -> usize {
+    let doc = Document::from_str(Path::new("bench.rs"), &scenario.drifted_content)
+        .expect("build benchmark document");
+    doc.lines.len()
+}
+
 fn linehash_resolve_once(scenario: &EditScenario) -> Result<usize, LinehashError> {
     let doc = Document::from_str(Path::new("bench.rs"), &scenario.drifted_content)
         .expect("build benchmark document");
@@ -307,6 +313,15 @@ fn bench_edit_naive_str_replace_single_edit_10k_line_shift_drift(c: &mut Criteri
     });
 }
 
+fn bench_edit_parse_document_10k_exact_match(c: &mut Criterion) {
+    let scenario = generate_exact_match_edit_scenario(10_000);
+    assert_exact_match_scenario(&scenario, 10_000);
+
+    c.bench_function("edit_parse_document_10k_exact_match", |b| {
+        b.iter(|| black_box(linehash_parse_once(black_box(&scenario))))
+    });
+}
+
 fn bench_edit_resolve_anchor_10k_exact_match(c: &mut Criterion) {
     let scenario = generate_exact_match_edit_scenario(10_000);
     assert_exact_match_scenario(&scenario, 10_000);
@@ -322,6 +337,15 @@ fn bench_edit_resolve_anchor_100k_exact_match(c: &mut Criterion) {
 
     c.bench_function("edit_resolve_anchor_100k_exact_match", |b| {
         b.iter(|| black_box(linehash_resolve_once(black_box(&scenario)).expect("anchor resolves")))
+    });
+}
+
+fn bench_edit_parse_document_100k_exact_match(c: &mut Criterion) {
+    let scenario = generate_exact_match_edit_scenario(100_000);
+    assert_exact_match_scenario(&scenario, 100_000);
+
+    c.bench_function("edit_parse_document_100k_exact_match", |b| {
+        b.iter(|| black_box(linehash_parse_once(black_box(&scenario))))
     });
 }
 
@@ -388,8 +412,10 @@ criterion_group!(
     bench_edit_naive_str_replace_single_edit_10k_duplicate_target,
     bench_edit_linehash_single_edit_10k_line_shift_drift,
     bench_edit_naive_str_replace_single_edit_10k_line_shift_drift,
+    bench_edit_parse_document_10k_exact_match,
     bench_edit_resolve_anchor_10k_exact_match,
     bench_edit_resolve_anchor_100k_exact_match,
+    bench_edit_parse_document_100k_exact_match,
     bench_edit_mutate_render_linehash_10k_single_line,
     bench_edit_mutate_render_linehash_100k_single_line,
     bench_edit_mutate_render_linehash_10k_single_line_with_receipt,

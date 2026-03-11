@@ -35,7 +35,6 @@ pub struct FileMeta {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LineRecord {
-    pub number: usize,
     pub content: String,
     pub full_hash: u32,
     pub short_hash: ShortHash,
@@ -189,13 +188,13 @@ fn build_lines(content: &str, newline: NewlineStyle) -> Vec<LineRecord> {
 
     match newline {
         NewlineStyle::Lf => {
-            for (index, line) in content.split_terminator('\n').enumerate() {
-                lines.push(build_line_record(index + 1, line));
+            for line in content.split_terminator('\n') {
+                lines.push(build_line_record(line));
             }
         }
         NewlineStyle::Crlf => {
-            for (index, line) in content.split_terminator("\r\n").enumerate() {
-                lines.push(build_line_record(index + 1, line));
+            for line in content.split_terminator("\r\n") {
+                lines.push(build_line_record(line));
             }
         }
     }
@@ -203,10 +202,9 @@ fn build_lines(content: &str, newline: NewlineStyle) -> Vec<LineRecord> {
     lines
 }
 
-fn build_line_record(number: usize, content: &str) -> LineRecord {
+fn build_line_record(content: &str) -> LineRecord {
     let full_hash = hash::full_hash(content);
     LineRecord {
-        number,
         content: content.to_owned(),
         full_hash,
         short_hash: hash::short_from_full(full_hash),
@@ -531,10 +529,10 @@ mod tests {
     }
 
     #[test]
-    fn test_line_numbers_are_1_based() {
+    fn test_line_order_matches_vector_positions() {
         let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\n").unwrap();
-        assert_eq!(doc.lines[0].number, 1);
-        assert_eq!(doc.lines[1].number, 2);
+        assert_eq!(doc.lines[0].content, "alpha");
+        assert_eq!(doc.lines[1].content, "beta");
     }
 
     #[test]

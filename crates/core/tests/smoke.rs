@@ -32,9 +32,17 @@ fn read_json_includes_file_metadata_and_lines() {
     let fixture = fixture_path("simple_lf.js");
     let fixture_arg = fixture.to_string_lossy().into_owned();
     let parsed = parse_json(&["read", &fixture_arg, "--json"]);
+    let expected_newline = if fs::read_to_string(&fixture)
+        .unwrap()
+        .contains("\r\n")
+    {
+        "crlf"
+    } else {
+        "lf"
+    };
 
     assert_eq!(parsed["file"], fixture_arg);
-    assert_eq!(parsed["newline"], "lf");
+    assert_eq!(parsed["newline"], expected_newline);
     assert_eq!(parsed["trailing_newline"], true);
     assert!(parsed["mtime"].is_i64());
     assert!(parsed["mtime_nanos"].is_u64());

@@ -16,7 +16,8 @@ pub fn run<W: Write, E: Write>(
 ) -> Result<(), LinehashError> {
     let mut doc = Document::load(&cmd.file)?;
     check_guard(&doc, cmd.expect_mtime, cmd.expect_inode)?;
-    let before_bytes = doc.render();
+    let needs_receipt = cmd.receipt || cmd.audit_log.is_some();
+    let before_bytes = needs_receipt.then(|| doc.render());
     let index = doc.build_index();
 
     let anchor_a = parse_anchor(&cmd.anchor_a)?;
@@ -49,22 +50,24 @@ pub fn run<W: Write, E: Write>(
     let after_bytes = doc.render();
     atomic_write(&cmd.file, &after_bytes)?;
 
-    let receipt = receipt::build_receipt(
-        "swap",
-        &cmd.file,
-        summary.line_changes(),
-        &before_bytes,
-        &after_bytes,
-    );
+    if needs_receipt {
+        let receipt = receipt::build_receipt(
+            "swap",
+            &cmd.file,
+            summary.line_changes(),
+            before_bytes.as_deref().expect("before bytes should exist when receipt is needed"),
+            &after_bytes,
+        );
 
-    if let Some(log_path) = &cmd.audit_log {
-        if let Err(error) = receipt::append_to_audit_log(&receipt, log_path) {
-            receipt::write_audit_warning(ctx, log_path, &error).map_err(LinehashError::from)?;
+        if let Some(log_path) = &cmd.audit_log {
+            if let Err(error) = receipt::append_to_audit_log(&receipt, log_path) {
+                receipt::write_audit_warning(ctx, log_path, &error).map_err(LinehashError::from)?;
+            }
         }
-    }
 
-    if cmd.receipt {
-        return receipt::write_receipt(ctx, &receipt);
+        if cmd.receipt {
+            return receipt::write_receipt(ctx, &receipt);
+        }
     }
 
     output::write_success_line(ctx, &summary.success_message()).map_err(LinehashError::from)

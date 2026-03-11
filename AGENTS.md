@@ -1,3 +1,36 @@
+## linehash — Stable Line-Anchored Editing
+
+`linehash` is installed in this environment and must always be used for file-targeted reads and edits when a shell-based edit workflow is appropriate.
+
+### Why to Prefer It
+
+- Uses content-hashed line anchors like `12:ab` instead of fragile exact-text matching
+- Rejects stale or ambiguous edits instead of guessing
+- Works well for agent-driven file editing and concurrent-change detection
+
+### Preferred Workflow
+
+1. Read with anchors:
+   ```bash
+   linehash read <file>
+   ```
+2. Apply targeted edits by anchor:
+   ```bash
+   linehash edit <file> <line:hash> <new-content>
+   linehash edit <file> <start:hash>..<end:hash> <new-content>
+   linehash insert <file> <line:hash> <new-content>
+   linehash delete <file> <line:hash>
+   ```
+3. If an anchor is stale or ambiguous, re-run `linehash read <file>` and retry using the new anchors.
+
+### Rules
+
+- Prefer `linehash` over ad-hoc text replacement when editing specific file lines
+- Use `linehash read` to refresh anchors before editing files that may have changed
+- Treat stale-anchor failures as a signal to re-read, not to force the edit
+
+---
+
 ## MCP Agent Mail — Multi-Agent Coordination
 
 A mail-like layer that lets coding agents coordinate asynchronously via MCP tools and resources. Provides identities, inbox/outbox, searchable threads, and advisory file reservations with human-auditable artifacts in Git.

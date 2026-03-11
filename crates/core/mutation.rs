@@ -17,7 +17,7 @@ pub fn replace_line(doc: &mut Document, index: usize, content: &str) -> Result<(
     ensure_index(doc, index)?;
 
     doc.lines[index].content = content.to_owned();
-    rebuild_line_metadata(doc);
+    refresh_line_metadata(&mut doc.lines[index], index + 1);
     Ok(())
 }
 
@@ -31,7 +31,8 @@ pub fn replace_range_with_line(
     ensure_range(doc, start, end)?;
 
     doc.lines.splice(start..=end, [new_line_record(content)]);
-    rebuild_line_metadata(doc);
+    refresh_line_metadata(&mut doc.lines[start], start + 1);
+    renumber_suffix(doc, start + 1);
     Ok(())
 }
 
@@ -40,7 +41,8 @@ pub fn insert_line(doc: &mut Document, index: usize, content: &str) -> Result<()
     ensure_insert_index(doc, index)?;
 
     doc.lines.insert(index, new_line_record(content));
-    rebuild_line_metadata(doc);
+    refresh_line_metadata(&mut doc.lines[index], index + 1);
+    renumber_suffix(doc, index + 1);
     Ok(())
 }
 
@@ -48,7 +50,7 @@ pub fn delete_line(doc: &mut Document, index: usize) -> Result<(), LinehashError
     ensure_index(doc, index)?;
 
     doc.lines.remove(index);
-    rebuild_line_metadata(doc);
+    renumber_suffix(doc, index);
     Ok(())
 }
 
@@ -64,7 +66,8 @@ pub fn swap_lines(doc: &mut Document, left: usize, right: usize) -> Result<(), L
     }
 
     doc.lines.swap(left, right);
-    rebuild_line_metadata(doc);
+    doc.lines[left].number = left + 1;
+    doc.lines[right].number = right + 1;
     Ok(())
 }
 
@@ -93,15 +96,34 @@ pub fn move_line(
     };
 
     doc.lines.insert(insert_at, line);
-    rebuild_line_metadata(doc);
+    renumber_range(doc, source.min(insert_at), source.max(insert_at));
     Ok(insert_at)
 }
 
-fn rebuild_line_metadata(doc: &mut Document) {
-    for (index, line) in doc.lines.iter_mut().enumerate() {
-        line.number = index + 1;
-        line.full_hash = hash::full_hash(&line.content);
-        line.short_hash = hash::short_from_full(line.full_hash);
+fn refresh_line_metadata(line: &mut LineRecord, number: usize) {
+    line.number = number;
+    line.full_hash = hash::full_hash(&line.content);
+    line.short_hash = hash::short_from_full(line.full_hash);
+}
+
+fn renumber_suffix(doc: &mut Document, start: usize) {
+    if start >= doc.lines.len() {
+        return;
+    }
+
+    for (offset, line) in doc.lines[start..].iter_mut().enumerate() {
+        line.number = start + offset + 1;
+    }
+}
+
+fn renumber_range(doc: &mut Document, start: usize, end: usize) {
+    if start >= doc.lines.len() {
+        return;
+    }
+
+    let end = end.min(doc.lines.len() - 1);
+    for index in start..=end {
+        doc.lines[index].number = index + 1;
     }
 }
 
@@ -191,6 +213,7 @@ mod tests {
     #[test]
     fn insert_line_at_index_renumbers_following_lines() {
         let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\ngamma\n").unwrap();
+        let original_hash = doc.lines[1].short_hash;
 
         insert_line(&mut doc, 1, "beta").unwrap();
 
@@ -199,6 +222,7 @@ mod tests {
         assert_eq!(doc.lines[1].number, 2);
         assert_eq!(doc.lines[2].content, "gamma");
         assert_eq!(doc.lines[2].number, 3);
+        assert_eq!(doc.lines[2].short_hash, original_hash);
         assert_eq!(doc.render(), b"alpha\nbeta\ngamma\n");
     }
 
@@ -214,6 +238,7 @@ mod tests {
     #[test]
     fn delete_line_removes_middle_line() {
         let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
+        let original_hash = doc.lines[2].short_hash;
 
         delete_line(&mut doc, 1).unwrap();
 
@@ -221,6 +246,7 @@ mod tests {
         assert_eq!(doc.lines[0].content, "alpha");
         assert_eq!(doc.lines[1].content, "gamma");
         assert_eq!(doc.lines[1].number, 2);
+        assert_eq!(doc.lines[1].short_hash, original_hash);
         assert_eq!(doc.render(), b"alpha\ngamma\n");
     }
 
@@ -239,12 +265,16 @@ mod tests {
     fn swap_lines_exchanges_contents_and_recomputes_numbers() {
         let mut doc =
             Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let beta_hash = doc.lines[1].short_hash;
+        let delta_hash = doc.lines[3].short_hash;
 
         swap_lines(&mut doc, 1, 3).unwrap();
 
         assert_eq!(doc.render(), b"alpha\ndelta\ngamma\nbeta\n");
         assert_eq!(doc.lines[1].number, 2);
         assert_eq!(doc.lines[3].number, 4);
+        assert_eq!(doc.lines[1].short_hash, delta_hash);
+        assert_eq!(doc.lines[3].short_hash, beta_hash);
     }
 
     #[test]
@@ -262,11 +292,15 @@ mod tests {
     fn move_line_after_target_adjusts_when_source_is_above_target() {
         let mut doc =
             Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        let alpha_hash = doc.lines[0].short_hash;
+        let beta_hash = doc.lines[1].short_hash;
 
         let inserted_at = move_line(&mut doc, 1, 3, false).unwrap();
 
         assert_eq!(inserted_at, 3);
         assert_eq!(doc.render(), b"alpha\ngamma\ndelta\nbeta\n");
+        assert_eq!(doc.lines[0].short_hash, alpha_hash);
+        assert_eq!(doc.lines[3].short_hash, beta_hash);
         assert_eq!(doc.lines[3].number, 4);
     }
 

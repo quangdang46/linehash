@@ -104,11 +104,8 @@ impl Document {
     }
 
     pub fn build_index(&self) -> ShortHashIndex {
-        let mut index = empty_index();
-        for (line_index, line) in self.lines.iter().enumerate() {
-            index[line.short_hash as usize].push(line_index);
-        }
-        index
+        let counts = count_short_hashes(&self.lines);
+        build_index_from_counts(&self.lines, &counts)
     }
 
     pub fn render(&self) -> Vec<u8> {
@@ -116,18 +113,23 @@ impl Document {
             return Vec::new();
         }
 
-        let mut rendered = self
-            .lines
-            .iter()
-            .map(|line| line.content.as_str())
-            .collect::<Vec<_>>()
-            .join(self.newline.separator());
+        let separator = self.newline.separator().as_bytes();
+        let content_len: usize = self.lines.iter().map(|line| line.content.len()).sum();
+        let separator_count = self.lines.len().saturating_sub(1) + usize::from(self.trailing_newline);
+        let mut rendered = Vec::with_capacity(content_len + separator.len() * separator_count);
 
-        if self.trailing_newline {
-            rendered.push_str(self.newline.separator());
+        for (index, line) in self.lines.iter().enumerate() {
+            if index > 0 {
+                rendered.extend_from_slice(separator);
+            }
+            rendered.extend_from_slice(line.content.as_bytes());
         }
 
-        rendered.into_bytes()
+        if self.trailing_newline {
+            rendered.extend_from_slice(separator);
+        }
+
+        rendered
     }
 
     pub fn compute_stats(&self) -> FileStats {

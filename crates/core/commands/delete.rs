@@ -41,7 +41,9 @@ pub fn run<W: Write, E: Write>(
             "delete",
             &cmd.file,
             summary.line_changes(),
-            before_bytes.as_deref().expect("before bytes should exist when receipt is needed"),
+            before_bytes
+                .as_deref()
+                .expect("before bytes should exist when receipt is needed"),
             &after_bytes,
         );
 

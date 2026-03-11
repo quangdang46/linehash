@@ -64,15 +64,27 @@ fn verify_json_100_anchors_stays_within_envelope() {
         .expect("read lines array")
         .iter()
         .take(100)
-        .map(|line| format!("{}:{}", line["n"].as_u64().unwrap(), line["hash"].as_str().unwrap()))
+        .map(|line| {
+            format!(
+                "{}:{}",
+                line["n"].as_u64().unwrap(),
+                line["hash"].as_str().unwrap()
+            )
+        })
         .collect::<Vec<_>>();
-    let anchor_refs = anchor_values.iter().map(|value| value.as_str()).collect::<Vec<_>>();
+    let anchor_refs = anchor_values
+        .iter()
+        .map(|value| value.as_str())
+        .collect::<Vec<_>>();
 
     let best = best_duration(|| {
         let mut args = vec!["verify", file_arg.as_str()];
         args.extend(anchor_refs.iter().copied());
         let (stdout, stderr, code) = run_linehash(&args);
-        assert_eq!(code, 0, "expected success, got stderr: {stderr}, stdout: {stdout}");
+        assert_eq!(
+            code, 0,
+            "expected success, got stderr: {stderr}, stdout: {stdout}"
+        );
     });
 
     assert!(

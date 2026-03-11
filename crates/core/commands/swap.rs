@@ -55,7 +55,9 @@ pub fn run<W: Write, E: Write>(
             "swap",
             &cmd.file,
             summary.line_changes(),
-            before_bytes.as_deref().expect("before bytes should exist when receipt is needed"),
+            before_bytes
+                .as_deref()
+                .expect("before bytes should exist when receipt is needed"),
             &after_bytes,
         );
 
@@ -147,7 +149,11 @@ mod tests {
     fn line_anchor(content: &str, line_no: usize) -> String {
         let doc = Document::from_str(Path::new("demo.txt"), content).unwrap();
         let line = &doc.lines[line_no - 1];
-        format!("{}:{}", line_no, crate::document::format_short_hash(line.short_hash))
+        format!(
+            "{}:{}",
+            line_no,
+            crate::document::format_short_hash(line.short_hash)
+        )
     }
 
     #[test]

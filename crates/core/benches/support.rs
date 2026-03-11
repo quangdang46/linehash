@@ -25,7 +25,10 @@ pub fn generate_long_fixture(line_count: usize) -> String {
     lines.join("\n") + "\n"
 }
 
-pub fn generate_collision_fixture(line_count: usize, mut short_hash: impl FnMut(&str) -> String) -> String {
+pub fn generate_collision_fixture(
+    line_count: usize,
+    mut short_hash: impl FnMut(&str) -> String,
+) -> String {
     let (first, second) = find_collision_pair(&mut short_hash);
     let mut lines = Vec::with_capacity(line_count);
     for i in 0..line_count {
@@ -34,7 +37,10 @@ pub fn generate_collision_fixture(line_count: usize, mut short_hash: impl FnMut(
         } else if i % 16 == 1 {
             lines.push(second.clone());
         } else {
-            lines.push(format!("unique-line-{i:05}-{:08x}", i.wrapping_mul(1103515245)));
+            lines.push(format!(
+                "unique-line-{i:05}-{:08x}",
+                i.wrapping_mul(1103515245)
+            ));
         }
     }
     lines.join("\n") + "\n"
@@ -118,7 +124,10 @@ pub fn generate_line_shift_edit_scenario(line_count: usize) -> EditScenario {
     let mut scenario = build_base_edit_scenario(line_count, false);
     let mut drifted_lines = split_lines(&scenario.original_content);
     let target_index = scenario.target_line_number - 1;
-    drifted_lines.insert(target_index - 1, "fn inserted_line_before_target() { let marker = \"line_shift\"; }".to_owned());
+    drifted_lines.insert(
+        target_index - 1,
+        "fn inserted_line_before_target() { let marker = \"line_shift\"; }".to_owned(),
+    );
     scenario.drifted_content = drifted_lines.join("\n") + "\n";
     scenario
 }
@@ -151,8 +160,11 @@ fn build_base_edit_scenario(line_count: usize, long_lines: bool) -> EditScenario
 
     if long_lines {
         lines[drift_index] = "    let surrounding_context = compute_timeout_window_with_extended_payload(segment, payload, suffix, 42, \"long_line_context\");".to_owned();
-        lines[target_index] = "    timeout: 3000, // benchmark_payload_long_form_with_additional_context_tokens".to_owned();
-        lines[after_index] = "    retry: true, // benchmark_payload_long_form_followup_context".to_owned();
+        lines[target_index] =
+            "    timeout: 3000, // benchmark_payload_long_form_with_additional_context_tokens"
+                .to_owned();
+        lines[after_index] =
+            "    retry: true, // benchmark_payload_long_form_followup_context".to_owned();
     } else {
         lines[drift_index] = "    let surrounding_context = compute_timeout_window();".to_owned();
         lines[target_index] = "    timeout: 3000,".to_owned();
@@ -162,7 +174,8 @@ fn build_base_edit_scenario(line_count: usize, long_lines: bool) -> EditScenario
     let target_line_number = target_index + 1;
     let target_line = lines[target_index].clone();
     let replacement_line = if long_lines {
-        "    timeout: 5000, // benchmark_payload_long_form_with_additional_context_tokens".to_owned()
+        "    timeout: 5000, // benchmark_payload_long_form_with_additional_context_tokens"
+            .to_owned()
     } else {
         "    timeout: 5000,".to_owned()
     };

@@ -113,7 +113,10 @@ mod tests {
     #[test]
     fn test_short_from_full_matches_short_hash() {
         let line = "alpha beta gamma";
-        assert_eq!(format_short_hash(short_from_full(full_hash(line))), short_hash(line));
+        assert_eq!(
+            format_short_hash(short_from_full(full_hash(line))),
+            short_hash(line)
+        );
     }
 
     #[test]

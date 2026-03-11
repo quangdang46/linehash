@@ -86,7 +86,10 @@ fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<(), LinehashError> 
 }
 
 fn format_filename(line_no: usize, short_hash: crate::hash::ShortHash) -> String {
-    format!("{line_no:04}_{}.txt", crate::document::format_short_hash(short_hash))
+    format!(
+        "{line_no:04}_{}.txt",
+        crate::document::format_short_hash(short_hash)
+    )
 }
 
 fn newline_name(newline: NewlineStyle) -> &'static str {

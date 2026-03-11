@@ -314,7 +314,11 @@ fn emit_block(
     for (offset, content) in added.iter().enumerate().take(shared) {
         let line = doc_line(doc, start + offset)?;
         ops.push(PatchOp::Edit {
-            anchor: format!("{}:{}", start + offset + 1, crate::document::format_short_hash(line.short_hash)),
+            anchor: format!(
+                "{}:{}",
+                start + offset + 1,
+                crate::document::format_short_hash(line.short_hash)
+            ),
             content: content.clone(),
         });
     }
@@ -322,7 +326,11 @@ fn emit_block(
     for offset in shared..removed.len() {
         let line = doc_line(doc, start + offset)?;
         ops.push(PatchOp::Delete {
-            anchor: format!("{}:{}", start + offset + 1, crate::document::format_short_hash(line.short_hash)),
+            anchor: format!(
+                "{}:{}",
+                start + offset + 1,
+                crate::document::format_short_hash(line.short_hash)
+            ),
         });
     }
 
@@ -333,7 +341,11 @@ fn emit_block(
                 let anchor_line = doc_line(doc, start)?;
                 for content in extra.iter().rev() {
                     ops.push(PatchOp::Insert {
-                        anchor: format!("{}:{}", start + 1, crate::document::format_short_hash(anchor_line.short_hash)),
+                        anchor: format!(
+                            "{}:{}",
+                            start + 1,
+                            crate::document::format_short_hash(anchor_line.short_hash)
+                        ),
                         content: content.clone(),
                         before: true,
                     });
@@ -341,7 +353,11 @@ fn emit_block(
             } else if let Some(anchor_line) = doc.lines.last() {
                 for content in extra {
                     ops.push(PatchOp::Insert {
-                        anchor: format!("{}:{}", doc.lines.len(), crate::document::format_short_hash(anchor_line.short_hash)),
+                        anchor: format!(
+                            "{}:{}",
+                            doc.lines.len(),
+                            crate::document::format_short_hash(anchor_line.short_hash)
+                        ),
                         content: content.clone(),
                         before: false,
                     });
@@ -353,7 +369,11 @@ fn emit_block(
             let anchor_line = doc_line(doc, start + removed.len() - 1)?;
             for content in extra {
                 ops.push(PatchOp::Insert {
-                    anchor: format!("{}:{}", start + removed.len(), crate::document::format_short_hash(anchor_line.short_hash)),
+                    anchor: format!(
+                        "{}:{}",
+                        start + removed.len(),
+                        crate::document::format_short_hash(anchor_line.short_hash)
+                    ),
                     content: content.clone(),
                     before: false,
                 });
@@ -399,7 +419,10 @@ mod tests {
         assert_eq!(
             patch.ops[0],
             PatchOp::Edit {
-                anchor: format!("2:{}", crate::document::format_short_hash(doc.lines[1].short_hash)),
+                anchor: format!(
+                    "2:{}",
+                    crate::document::format_short_hash(doc.lines[1].short_hash)
+                ),
                 content: "BETA".into(),
             }
         );
@@ -418,7 +441,10 @@ mod tests {
         assert_eq!(
             patch.ops,
             vec![PatchOp::Insert {
-                anchor: format!("2:{}", crate::document::format_short_hash(doc.lines[1].short_hash)),
+                anchor: format!(
+                    "2:{}",
+                    crate::document::format_short_hash(doc.lines[1].short_hash)
+                ),
                 content: "beta".into(),
                 before: true,
             }]
@@ -438,7 +464,10 @@ mod tests {
         assert_eq!(
             patch.ops,
             vec![PatchOp::Delete {
-                anchor: format!("2:{}", crate::document::format_short_hash(doc.lines[1].short_hash)),
+                anchor: format!(
+                    "2:{}",
+                    crate::document::format_short_hash(doc.lines[1].short_hash)
+                ),
             }]
         );
     }
@@ -458,14 +487,20 @@ mod tests {
         assert_eq!(
             patch.ops[0],
             PatchOp::Edit {
-                anchor: format!("2:{}", crate::document::format_short_hash(doc.lines[1].short_hash)),
+                anchor: format!(
+                    "2:{}",
+                    crate::document::format_short_hash(doc.lines[1].short_hash)
+                ),
                 content: "BETA".into(),
             }
         );
         assert_eq!(
             patch.ops[1],
             PatchOp::Edit {
-                anchor: format!("4:{}", crate::document::format_short_hash(doc.lines[3].short_hash)),
+                anchor: format!(
+                    "4:{}",
+                    crate::document::format_short_hash(doc.lines[3].short_hash)
+                ),
                 content: "between".into(),
             }
         );
@@ -527,7 +562,10 @@ mod tests {
         assert_eq!(
             patch.ops[0],
             PatchOp::Edit {
-                anchor: format!("2:{}", crate::document::format_short_hash(doc.lines[1].short_hash)),
+                anchor: format!(
+                    "2:{}",
+                    crate::document::format_short_hash(doc.lines[1].short_hash)
+                ),
                 content: "ALPHA".into(),
             }
         );

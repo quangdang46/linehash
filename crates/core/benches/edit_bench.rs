@@ -1,4 +1,4 @@
-#![allow(unused_imports)]
+#![allow(unused_imports, dead_code)]
 
 use std::path::Path;
 
@@ -33,7 +33,8 @@ fn linehash_edit_once(scenario: &EditScenario) -> Result<String, LinehashError> 
     let anchor = parse_anchor(&scenario.target_anchor).expect("parse target anchor");
     let resolved = resolve(&anchor, &doc, &index)?;
 
-    replace_line(&mut doc, resolved.index, &scenario.replacement_line).expect("replace target line");
+    replace_line(&mut doc, resolved.index, &scenario.replacement_line)
+        .expect("replace target line");
 
     Ok(String::from_utf8(doc.render()).expect("render benchmark document"))
 }
@@ -96,8 +97,14 @@ fn assert_exact_match_scenario(scenario: &EditScenario, expected_lines: usize) {
 
     let rendered = linehash_edit_once(scenario).expect("linehash exact-match edit succeeds");
     let edited_lines = rendered.lines().collect::<Vec<_>>();
-    assert_eq!(edited_lines[scenario.target_line_number - 1], scenario.expected_target_line);
-    assert!(naive_str_replace_line_once(scenario), "naive exact-line replacement should succeed");
+    assert_eq!(
+        edited_lines[scenario.target_line_number - 1],
+        scenario.expected_target_line
+    );
+    assert!(
+        naive_str_replace_line_once(scenario),
+        "naive exact-line replacement should succeed"
+    );
 }
 
 fn assert_surrounding_drift_scenario(scenario: &EditScenario) {
@@ -105,7 +112,10 @@ fn assert_surrounding_drift_scenario(scenario: &EditScenario) {
 
     let rendered = linehash_edit_once(scenario).expect("linehash drift edit succeeds");
     let edited_lines = rendered.lines().collect::<Vec<_>>();
-    assert_eq!(edited_lines[scenario.target_line_number - 1], scenario.expected_target_line);
+    assert_eq!(
+        edited_lines[scenario.target_line_number - 1],
+        scenario.expected_target_line
+    );
 
     assert!(
         !scenario.drifted_content.contains(&scenario.naive_old_block),
@@ -124,7 +134,8 @@ fn assert_surrounding_drift_scenario(scenario: &EditScenario) {
 fn assert_target_drift_scenario(scenario: &EditScenario) {
     assert_eq!(scenario.drifted_content.lines().count(), 10_000);
 
-    let error = linehash_edit_once(scenario).expect_err("linehash should fail on target-line drift");
+    let error =
+        linehash_edit_once(scenario).expect_err("linehash should fail on target-line drift");
     assert!(matches!(error, LinehashError::StaleAnchor { .. }));
     assert!(
         !naive_str_replace_line_once(scenario),
@@ -140,20 +151,23 @@ fn assert_duplicate_target_scenario(scenario: &EditScenario) {
         .iter()
         .filter(|line| **line == scenario.naive_old_line)
         .count();
-    assert!(duplicate_count >= 2, "fixture should contain at least two identical target lines");
+    assert!(
+        duplicate_count >= 2,
+        "fixture should contain at least two identical target lines"
+    );
 
     let rendered = linehash_edit_once(scenario).expect("linehash duplicate-target edit succeeds");
     let linehash_lines = rendered.lines().collect::<Vec<_>>();
     assert_eq!(linehash_lines[target_index], scenario.expected_target_line);
 
-    let naive_replaced = scenario
-        .drifted_content
-        .clone()
-        .replacen(&scenario.naive_old_line, &scenario.naive_new_line, 1);
+    let naive_replaced = scenario.drifted_content.clone().replacen(
+        &scenario.naive_old_line,
+        &scenario.naive_new_line,
+        1,
+    );
     let naive_lines = naive_replaced.lines().collect::<Vec<_>>();
     assert_eq!(
-        naive_lines[target_index],
-        scenario.naive_old_line,
+        naive_lines[target_index], scenario.naive_old_line,
         "naive exact-line replacement should leave the intended later duplicate unchanged"
     );
 }
@@ -161,8 +175,12 @@ fn assert_duplicate_target_scenario(scenario: &EditScenario) {
 fn assert_line_shift_drift_scenario(scenario: &EditScenario) {
     assert_eq!(scenario.drifted_content.lines().count(), 10_001);
 
-    let error = linehash_edit_once(scenario).expect_err("linehash should fail when lines shift above the target");
-    assert!(matches!(error, LinehashError::StaleAnchor { .. } | LinehashError::InvalidAnchor { .. }));
+    let error = linehash_edit_once(scenario)
+        .expect_err("linehash should fail when lines shift above the target");
+    assert!(matches!(
+        error,
+        LinehashError::StaleAnchor { .. } | LinehashError::InvalidAnchor { .. }
+    ));
     assert!(
         naive_str_replace_line_once(scenario),
         "naive exact-line replacement should still find the moved text"
@@ -174,7 +192,9 @@ fn bench_edit_linehash_single_edit_1k_exact_match(c: &mut Criterion) {
     assert_exact_match_scenario(&scenario, 1_000);
 
     c.bench_function("edit_linehash_single_edit_1k_exact_match", |b| {
-        b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).expect("exact-match edit succeeds")))
+        b.iter(|| {
+            black_box(linehash_edit_once(black_box(&scenario)).expect("exact-match edit succeeds"))
+        })
     });
 }
 
@@ -192,7 +212,9 @@ fn bench_edit_linehash_single_edit_10k_exact_match(c: &mut Criterion) {
     assert_exact_match_scenario(&scenario, 10_000);
 
     c.bench_function("edit_linehash_single_edit_10k_exact_match", |b| {
-        b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).expect("exact-match edit succeeds")))
+        b.iter(|| {
+            black_box(linehash_edit_once(black_box(&scenario)).expect("exact-match edit succeeds"))
+        })
     });
 }
 
@@ -210,7 +232,9 @@ fn bench_edit_linehash_single_edit_100k_exact_match(c: &mut Criterion) {
     assert_exact_match_scenario(&scenario, 100_000);
 
     c.bench_function("edit_linehash_single_edit_100k_exact_match", |b| {
-        b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).expect("exact-match edit succeeds")))
+        b.iter(|| {
+            black_box(linehash_edit_once(black_box(&scenario)).expect("exact-match edit succeeds"))
+        })
     });
 }
 
@@ -227,18 +251,27 @@ fn bench_edit_linehash_single_edit_10k_long_lines_exact_match(c: &mut Criterion)
     let scenario = generate_long_line_exact_match_edit_scenario(10_000);
     assert_exact_match_scenario(&scenario, 10_000);
 
-    c.bench_function("edit_linehash_single_edit_10k_long_lines_exact_match", |b| {
-        b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).expect("long-line exact-match edit succeeds")))
-    });
+    c.bench_function(
+        "edit_linehash_single_edit_10k_long_lines_exact_match",
+        |b| {
+            b.iter(|| {
+                black_box(
+                    linehash_edit_once(black_box(&scenario))
+                        .expect("long-line exact-match edit succeeds"),
+                )
+            })
+        },
+    );
 }
 
 fn bench_edit_naive_str_replace_single_edit_10k_long_lines_exact_match(c: &mut Criterion) {
     let scenario = generate_long_line_exact_match_edit_scenario(10_000);
     assert_exact_match_scenario(&scenario, 10_000);
 
-    c.bench_function("edit_naive_str_replace_single_edit_10k_long_lines_exact_match", |b| {
-        b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_naive_str_replace_single_edit_10k_long_lines_exact_match",
+        |b| b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario)))),
+    );
 }
 
 fn bench_edit_linehash_single_edit_10k_whitespace_drift(c: &mut Criterion) {
@@ -254,27 +287,30 @@ fn bench_edit_naive_str_replace_single_edit_10k_whitespace_drift(c: &mut Criteri
     let scenario = generate_whitespace_drift_edit_scenario(10_000);
     assert_surrounding_drift_scenario(&scenario);
 
-    c.bench_function("edit_naive_str_replace_single_edit_10k_whitespace_drift", |b| {
-        b.iter(|| black_box(naive_str_replace_block_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_naive_str_replace_single_edit_10k_whitespace_drift",
+        |b| b.iter(|| black_box(naive_str_replace_block_once(black_box(&scenario)))),
+    );
 }
 
 fn bench_edit_linehash_single_edit_10k_target_whitespace_drift(c: &mut Criterion) {
     let scenario = generate_target_whitespace_drift_edit_scenario(10_000);
     assert_target_drift_scenario(&scenario);
 
-    c.bench_function("edit_linehash_single_edit_10k_target_whitespace_drift", |b| {
-        b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).is_err()))
-    });
+    c.bench_function(
+        "edit_linehash_single_edit_10k_target_whitespace_drift",
+        |b| b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).is_err())),
+    );
 }
 
 fn bench_edit_naive_str_replace_single_edit_10k_target_whitespace_drift(c: &mut Criterion) {
     let scenario = generate_target_whitespace_drift_edit_scenario(10_000);
     assert_target_drift_scenario(&scenario);
 
-    c.bench_function("edit_naive_str_replace_single_edit_10k_target_whitespace_drift", |b| {
-        b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_naive_str_replace_single_edit_10k_target_whitespace_drift",
+        |b| b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario)))),
+    );
 }
 
 fn bench_edit_linehash_single_edit_10k_duplicate_target(c: &mut Criterion) {
@@ -282,7 +318,11 @@ fn bench_edit_linehash_single_edit_10k_duplicate_target(c: &mut Criterion) {
     assert_duplicate_target_scenario(&scenario);
 
     c.bench_function("edit_linehash_single_edit_10k_duplicate_target", |b| {
-        b.iter(|| black_box(linehash_edit_once(black_box(&scenario)).expect("duplicate-target edit succeeds")))
+        b.iter(|| {
+            black_box(
+                linehash_edit_once(black_box(&scenario)).expect("duplicate-target edit succeeds"),
+            )
+        })
     });
 }
 
@@ -290,9 +330,10 @@ fn bench_edit_naive_str_replace_single_edit_10k_duplicate_target(c: &mut Criteri
     let scenario = generate_duplicate_target_edit_scenario(10_000);
     assert_duplicate_target_scenario(&scenario);
 
-    c.bench_function("edit_naive_str_replace_single_edit_10k_duplicate_target", |b| {
-        b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_naive_str_replace_single_edit_10k_duplicate_target",
+        |b| b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario)))),
+    );
 }
 
 fn bench_edit_linehash_single_edit_10k_line_shift_drift(c: &mut Criterion) {
@@ -308,9 +349,10 @@ fn bench_edit_naive_str_replace_single_edit_10k_line_shift_drift(c: &mut Criteri
     let scenario = generate_line_shift_edit_scenario(10_000);
     assert_line_shift_drift_scenario(&scenario);
 
-    c.bench_function("edit_naive_str_replace_single_edit_10k_line_shift_drift", |b| {
-        b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_naive_str_replace_single_edit_10k_line_shift_drift",
+        |b| b.iter(|| black_box(naive_str_replace_line_once(black_box(&scenario)))),
+    );
 }
 
 fn bench_edit_parse_document_10k_exact_match(c: &mut Criterion) {
@@ -371,18 +413,32 @@ fn bench_edit_mutate_render_linehash_10k_single_line_with_receipt(c: &mut Criter
     let scenario = generate_exact_match_edit_scenario(10_000);
     assert_exact_match_scenario(&scenario, 10_000);
 
-    c.bench_function("edit_mutate_render_linehash_10k_single_line_with_receipt", |b| {
-        b.iter(|| black_box(linehash_mutate_render_with_receipt_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_mutate_render_linehash_10k_single_line_with_receipt",
+        |b| {
+            b.iter(|| {
+                black_box(linehash_mutate_render_with_receipt_once(black_box(
+                    &scenario,
+                )))
+            })
+        },
+    );
 }
 
 fn bench_edit_mutate_render_linehash_100k_single_line_with_receipt(c: &mut Criterion) {
     let scenario = generate_exact_match_edit_scenario(100_000);
     assert_exact_match_scenario(&scenario, 100_000);
 
-    c.bench_function("edit_mutate_render_linehash_100k_single_line_with_receipt", |b| {
-        b.iter(|| black_box(linehash_mutate_render_with_receipt_once(black_box(&scenario))))
-    });
+    c.bench_function(
+        "edit_mutate_render_linehash_100k_single_line_with_receipt",
+        |b| {
+            b.iter(|| {
+                black_box(linehash_mutate_render_with_receipt_once(black_box(
+                    &scenario,
+                )))
+            })
+        },
+    );
 }
 
 fn bench_edit_replace_naive_line_10k_exact_match(c: &mut Criterion) {

@@ -168,7 +168,12 @@ pub fn print_read_context(
 
 pub fn print_index(writer: &mut impl Write, doc: &Document) -> io::Result<()> {
     for (index, line) in doc.lines.iter().enumerate() {
-        writeln!(writer, "{}:{}", index + 1, format_short_hash(line.short_hash))?;
+        writeln!(
+            writer,
+            "{}:{}",
+            index + 1,
+            format_short_hash(line.short_hash)
+        )?;
     }
     Ok(())
 }
@@ -400,8 +405,16 @@ mod tests {
         .unwrap();
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("..."));
-        assert!(rendered.lines().any(|line| line.trim_start().starts_with("→2:")));
-        assert!(rendered.lines().any(|line| line.trim_start().starts_with("→9:")));
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.trim_start().starts_with("→2:"))
+        );
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.trim_start().starts_with("→9:"))
+        );
     }
 
     #[test]
@@ -474,7 +487,10 @@ mod tests {
         assert_eq!(parsed["file"], "demo.txt");
         assert_eq!(parsed["newline"], "lf");
         assert_eq!(parsed["lines"][0]["content"], "alpha");
-        assert_eq!(parsed["lines"][1]["hash"], format_short_hash(doc.lines[1].short_hash));
+        assert_eq!(
+            parsed["lines"][1]["hash"],
+            format_short_hash(doc.lines[1].short_hash)
+        );
     }
 
     #[test]
@@ -485,7 +501,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(parsed["file"], "demo.txt");
         assert_eq!(parsed["lines"][0]["n"], 1);
-        assert_eq!(parsed["lines"][0]["hash"], format_short_hash(doc.lines[0].short_hash));
+        assert_eq!(
+            parsed["lines"][0]["hash"],
+            format_short_hash(doc.lines[0].short_hash)
+        );
         assert!(parsed["lines"][0].get("content").is_none());
     }
 

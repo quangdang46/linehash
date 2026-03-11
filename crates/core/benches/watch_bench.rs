@@ -1,4 +1,4 @@
-#![allow(unused_imports)]
+#![allow(unused_imports, dead_code)]
 
 use std::path::Path;
 
@@ -6,8 +6,6 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 #[path = "../cli.rs"]
 mod cli;
-#[path = "../commands/watch.rs"]
-mod watch;
 #[path = "../context.rs"]
 mod context;
 #[path = "../document.rs"]
@@ -17,6 +15,8 @@ mod error;
 #[path = "../hash.rs"]
 mod hash;
 mod support;
+#[path = "../commands/watch.rs"]
+mod watch;
 
 use document::Document;
 use support::generate_short_fixture;
@@ -40,7 +40,10 @@ fn build_diff_documents_with_single_change(line_count: usize) -> (Document, Docu
     (build_document(&old_content), build_document(&new_content))
 }
 
-fn build_diff_documents_with_append(line_count: usize, appended_lines: usize) -> (Document, Document) {
+fn build_diff_documents_with_append(
+    line_count: usize,
+    appended_lines: usize,
+) -> (Document, Document) {
     let old_content = generate_short_fixture(line_count);
     let mut new_lines = old_content
         .lines()

@@ -42,7 +42,9 @@ pub fn run<W: Write, E: Write>(
             "patch",
             &cmd.file,
             result.changes.clone(),
-            before_bytes.as_deref().expect("before bytes should exist when receipt is needed"),
+            before_bytes
+                .as_deref()
+                .expect("before bytes should exist when receipt is needed"),
             &after_bytes,
         );
 
@@ -504,8 +506,7 @@ fn apply_plan(original: &Document, plan: &[PlannedOp]) -> Result<PatchResult, Li
 fn build_lines(contents: &[String]) -> Vec<LineRecord> {
     contents
         .iter()
-        .enumerate()
-        .map(|(_index, content)| {
+        .map(|content| {
             let full_hash = hash::full_hash(content);
             LineRecord {
                 content: content.clone(),

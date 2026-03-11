@@ -114,7 +114,8 @@ impl Document {
 
         let separator = self.newline.separator().as_bytes();
         let content_len: usize = self.lines.iter().map(|line| line.content.len()).sum();
-        let separator_count = self.lines.len().saturating_sub(1) + usize::from(self.trailing_newline);
+        let separator_count =
+            self.lines.len().saturating_sub(1) + usize::from(self.trailing_newline);
         let mut rendered = Vec::with_capacity(content_len + separator.len() * separator_count);
 
         for (index, line) in self.lines.iter().enumerate() {
@@ -181,8 +182,16 @@ fn build_lines(content: &str, newline: NewlineStyle) -> Vec<LineRecord> {
     }
 
     let line_count = match newline {
-        NewlineStyle::Lf => content.as_bytes().iter().filter(|byte| **byte == b'\n').count(),
-        NewlineStyle::Crlf => content.as_bytes().windows(2).filter(|window| *window == b"\r\n").count(),
+        NewlineStyle::Lf => content
+            .as_bytes()
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count(),
+        NewlineStyle::Crlf => content
+            .as_bytes()
+            .windows(2)
+            .filter(|window| *window == b"\r\n")
+            .count(),
     };
     let mut lines = Vec::with_capacity(line_count);
 
@@ -495,7 +504,10 @@ mod tests {
         let error = LinehashError::BinaryFile {
             path: "demo.bin".to_owned(),
         };
-        assert_eq!(error.hint(), Some("linehash only supports UTF-8 text files"));
+        assert_eq!(
+            error.hint(),
+            Some("linehash only supports UTF-8 text files")
+        );
     }
 
     #[test]
@@ -548,7 +560,8 @@ mod tests {
     #[test]
     fn test_build_index_collision_has_multiple_entries() {
         let (first, second) = find_collision_pair();
-        let doc = Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\n")).unwrap();
+        let doc =
+            Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\n")).unwrap();
         let index = doc.build_index();
         let short = doc.lines[0].short_hash as usize;
         assert_eq!(index[short], vec![0, 1]);
@@ -585,9 +598,11 @@ mod tests {
     #[test]
     fn test_collision_count_and_pairs_correct() {
         let (first, second) = find_collision_pair();
-        let document =
-            Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\nunique\n"))
-                .unwrap();
+        let document = Document::from_str(
+            Path::new("demo.txt"),
+            &format!("{first}\n{second}\nunique\n"),
+        )
+        .unwrap();
         let stats = document.compute_stats();
         assert_eq!(stats.collision_count, 2);
         assert_eq!(stats.collision_pairs, vec![(1, 2)]);

@@ -174,16 +174,16 @@ fn resolve_qualified(
         });
     }
 
-    let relocated_suffix = (!index[short as usize].is_empty())
-        .then(|| {
-            let lines = index[short as usize]
-                .iter()
-                .map(|idx| (idx + 1).to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("; hash still exists at line(s) {lines}")
-        })
-        .unwrap_or_default();
+    let relocated_suffix = if !index[short as usize].is_empty() {
+        let lines = index[short as usize]
+            .iter()
+            .map(|idx| (idx + 1).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("; hash still exists at line(s) {lines}")
+    } else {
+        String::new()
+    };
     Err(LinehashError::StaleAnchor {
         anchor: format!("{line}:{rendered_short}").into_boxed_str(),
         line,
@@ -368,15 +368,7 @@ mod tests {
         let short = doc.lines[1].short_hash;
 
         assert_eq!(
-            resolve(
-                &Anchor::LineHash {
-                    line: 2,
-                    short
-                },
-                &doc,
-                &index
-            )
-            .unwrap(),
+            resolve(&Anchor::LineHash { line: 2, short }, &doc, &index).unwrap(),
             ResolvedLine {
                 index: 1,
                 line_no: 2,

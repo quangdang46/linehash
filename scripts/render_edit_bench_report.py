@@ -48,6 +48,8 @@ SECTIONS = [
             "edit_resolve_anchor_100k_exact_match",
             "edit_mutate_render_linehash_10k_single_line",
             "edit_mutate_render_linehash_100k_single_line",
+            "edit_mutate_render_linehash_10k_single_line_with_incremental_index",
+            "edit_mutate_render_linehash_100k_single_line_with_incremental_index",
             "edit_replace_naive_line_10k_exact_match",
         ],
     ),
@@ -74,6 +76,8 @@ NOTES = {
     "edit_resolve_anchor_100k_exact_match": "anchor resolution only on 100k exact-match fixture",
     "edit_mutate_render_linehash_10k_single_line": "linehash mutation plus render on 10k exact-match fixture",
     "edit_mutate_render_linehash_100k_single_line": "linehash mutation plus render on 100k exact-match fixture",
+    "edit_mutate_render_linehash_10k_single_line_with_incremental_index": "linehash mutation plus render on 10k exact-match fixture while incrementally maintaining the short-hash index",
+    "edit_mutate_render_linehash_100k_single_line_with_incremental_index": "linehash mutation plus render on 100k exact-match fixture while incrementally maintaining the short-hash index",
     "edit_replace_naive_line_10k_exact_match": "naive exact-line replace only on 10k exact-match fixture",
 }
 
@@ -87,6 +91,14 @@ def git_commit() -> str:
 
 def read_range(name: str) -> str:
     estimates_path = CRITERION_DIR / name / "new" / "estimates.json"
+    if not estimates_path.exists():
+        benchmark_dirs = CRITERION_DIR.glob("*/new/benchmark.json")
+        for benchmark_path in benchmark_dirs:
+            benchmark = json.loads(benchmark_path.read_text())
+            if benchmark.get("full_id") == name:
+                estimates_path = benchmark_path.parent / "estimates.json"
+                break
+
     if not estimates_path.exists():
         raise FileNotFoundError(f"Missing Criterion estimates for {name}: {estimates_path}")
 

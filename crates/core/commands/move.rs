@@ -6,7 +6,7 @@ use crate::commands::common::{atomic_write, check_guard};
 use crate::context::CommandContext;
 use crate::document::Document;
 use crate::error::LinehashError;
-use crate::mutation::move_line;
+use crate::mutation::move_line_with_index;
 use crate::output;
 use crate::receipt::{self, ChangeKind, LineChange};
 
@@ -18,7 +18,7 @@ pub fn run<W: Write, E: Write>(
     check_guard(&doc, cmd.expect_mtime, cmd.expect_inode)?;
     let needs_receipt = cmd.receipt || cmd.audit_log.is_some();
     let before_bytes = needs_receipt.then(|| doc.render());
-    let index = doc.build_index();
+    let mut index = doc.build_index();
 
     let source_anchor = parse_anchor(&cmd.anchor)?;
     let target_anchor = parse_anchor(&cmd.target)?;
@@ -26,7 +26,8 @@ pub fn run<W: Write, E: Write>(
     let target = resolve(&target_anchor, &doc, &index)?;
     let moved_content = doc.lines[source.index].content.clone();
     let place_before = matches!(cmd.direction, MoveDirection::Before);
-    let inserted_index = move_line(&mut doc, source.index, target.index, place_before)?;
+    let inserted_index =
+        move_line_with_index(&mut doc, &mut index, source.index, target.index, place_before)?;
 
     let summary = MoveSummary {
         source_line: source.line_no,

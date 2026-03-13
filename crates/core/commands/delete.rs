@@ -6,7 +6,7 @@ use crate::commands::common::{atomic_write, check_guard};
 use crate::context::{CommandContext, OutputMode};
 use crate::document::Document;
 use crate::error::LinehashError;
-use crate::mutation::delete_line_with_index;
+use crate::mutation::delete_line;
 use crate::output;
 use crate::receipt::{self, ChangeKind, LineChange};
 
@@ -18,11 +18,11 @@ pub fn run<W: Write, E: Write>(
     check_guard(&doc, cmd.expect_mtime, cmd.expect_inode)?;
     let needs_receipt = cmd.receipt || cmd.audit_log.is_some();
     let before_bytes = needs_receipt.then(|| doc.render());
-    let mut index = doc.build_index();
+    let index = doc.build_index();
     let anchor = parse_anchor(&cmd.anchor)?;
     let resolved = resolve(&anchor, &doc, &index)?;
     let deleted = doc.lines[resolved.index].content.clone();
-    delete_line_with_index(&mut doc, &mut index, resolved.index)?;
+    delete_line(&mut doc, resolved.index)?;
 
     let summary = DeleteSummary {
         line_no: resolved.line_no,

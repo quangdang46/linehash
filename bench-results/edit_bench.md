@@ -1,40 +1,38 @@
 # edit benchmark results
 
-Date: 2026-03-13 23:01:30
-Commit: `0063f73`
+Date: 2026-03-11 23:13:40
+Commit: `e6ec724`
 Build: current working tree
 Command: `cargo bench -p linehash --bench edit_bench`
 
 ## Current performance state
 
 ### End-to-end exact match
-- `edit_linehash_single_edit_1k_exact_match`: 147.36 µs – 151.25 µs
-- `edit_naive_str_replace_single_edit_1k_exact_match`: 9.89 µs – 10.22 µs
-- `edit_linehash_single_edit_10k_exact_match`: 1.7439 ms – 1.8604 ms
-- `edit_naive_str_replace_single_edit_10k_exact_match`: 693.19 µs – 726.58 µs
-- `edit_linehash_single_edit_100k_exact_match`: 30.3160 ms – 35.8564 ms
-- `edit_naive_str_replace_single_edit_100k_exact_match`: 40.8210 ms – 61.6319 ms
-- `edit_linehash_single_edit_10k_long_lines_exact_match`: 15.7041 ms – 18.5672 ms
-- `edit_naive_str_replace_single_edit_10k_long_lines_exact_match`: 5.4749 ms – 6.6702 ms
+- `edit_linehash_single_edit_1k_exact_match`: 126.85 µs – 128.02 µs
+- `edit_naive_str_replace_single_edit_1k_exact_match`: 8.41 µs – 8.62 µs
+- `edit_linehash_single_edit_10k_exact_match`: 1.4142 ms – 1.4408 ms
+- `edit_naive_str_replace_single_edit_10k_exact_match`: 443.13 µs – 448.65 µs
+- `edit_linehash_single_edit_100k_exact_match`: 16.8598 ms – 17.3102 ms
+- `edit_naive_str_replace_single_edit_100k_exact_match`: 6.6704 ms – 6.9663 ms
+- `edit_linehash_single_edit_10k_long_lines_exact_match`: 3.0851 ms – 3.1529 ms
+- `edit_naive_str_replace_single_edit_10k_long_lines_exact_match`: 749.04 µs – 781.00 µs
 
 ### Robustness scenarios
-- `edit_linehash_single_edit_10k_whitespace_drift`: 3.1459 ms – 3.8106 ms
-- `edit_naive_str_replace_single_edit_10k_whitespace_drift`: 243.11 µs – 296.04 µs
-- `edit_linehash_single_edit_10k_target_whitespace_drift`: 4.8863 ms – 5.7610 ms
-- `edit_naive_str_replace_single_edit_10k_target_whitespace_drift`: 140.34 µs – 200.91 µs
-- `edit_linehash_single_edit_10k_duplicate_target`: 7.6296 ms – 9.2832 ms
-- `edit_naive_str_replace_single_edit_10k_duplicate_target`: 1.1956 ms – 1.6739 ms
-- `edit_linehash_single_edit_10k_line_shift_drift`: 2.7853 ms – 3.1160 ms
-- `edit_naive_str_replace_single_edit_10k_line_shift_drift`: 198.42 µs – 225.61 µs
+- `edit_linehash_single_edit_10k_whitespace_drift`: 1.4451 ms – 1.4948 ms
+- `edit_naive_str_replace_single_edit_10k_whitespace_drift`: 66.24 µs – 68.73 µs
+- `edit_linehash_single_edit_10k_target_whitespace_drift`: 1.5437 ms – 1.7076 ms
+- `edit_naive_str_replace_single_edit_10k_target_whitespace_drift`: 46.37 µs – 48.93 µs
+- `edit_linehash_single_edit_10k_duplicate_target`: 1.5449 ms – 1.6518 ms
+- `edit_naive_str_replace_single_edit_10k_duplicate_target`: 135.45 µs – 142.31 µs
+- `edit_linehash_single_edit_10k_line_shift_drift`: 1.4570 ms – 1.5733 ms
+- `edit_naive_str_replace_single_edit_10k_line_shift_drift`: 117.85 µs – 120.14 µs
 
 ### Phase breakdown
-- `edit_resolve_anchor_10k_exact_match`: 5.4849 ms – 6.6142 ms
-- `edit_resolve_anchor_100k_exact_match`: 38.4865 ms – 44.1711 ms
-- `edit_mutate_render_linehash_10k_single_line`: 5.0899 ms – 6.6071 ms
-- `edit_mutate_render_linehash_100k_single_line`: 30.4097 ms – 33.7556 ms
-- `edit_mutate_render_linehash_10k_single_line_with_incremental_index`: 3.2780 ms – 4.0602 ms
-- `edit_mutate_render_linehash_100k_single_line_with_incremental_index`: 34.3701 ms – 40.2254 ms
-- `edit_replace_naive_line_10k_exact_match`: 413.69 µs – 529.56 µs
+- `edit_resolve_anchor_10k_exact_match`: 1.3908 ms – 1.4315 ms
+- `edit_resolve_anchor_100k_exact_match`: 15.8330 ms – 16.1587 ms
+- `edit_mutate_render_linehash_10k_single_line`: 1.3627 ms – 1.3816 ms
+- `edit_mutate_render_linehash_100k_single_line`: 16.5162 ms – 16.9651 ms
+- `edit_replace_naive_line_10k_exact_match`: 95.00 µs – 96.36 µs
 
 ## Scenario notes
 
@@ -58,8 +56,6 @@ Command: `cargo bench -p linehash --bench edit_bench`
 - `edit_resolve_anchor_100k_exact_match`: anchor resolution only on 100k exact-match fixture
 - `edit_mutate_render_linehash_10k_single_line`: linehash mutation plus render on 10k exact-match fixture
 - `edit_mutate_render_linehash_100k_single_line`: linehash mutation plus render on 100k exact-match fixture
-- `edit_mutate_render_linehash_10k_single_line_with_incremental_index`: linehash mutation plus render on 10k exact-match fixture while incrementally maintaining the short-hash index
-- `edit_mutate_render_linehash_100k_single_line_with_incremental_index`: linehash mutation plus render on 100k exact-match fixture while incrementally maintaining the short-hash index
 - `edit_replace_naive_line_10k_exact_match`: naive exact-line replace only on 10k exact-match fixture
 
 ## Assessment

@@ -1,9 +1,6 @@
 #![allow(dead_code)]
 
-use crate::document::{
-    Document, LineRecord, ShortHashIndex, insert_index_position, remove_index_position,
-    replace_index_position, shift_index_positions,
-};
+use crate::document::{Document, LineRecord};
 use crate::error::LinehashError;
 use crate::hash;
 
@@ -24,28 +21,6 @@ pub fn replace_line(doc: &mut Document, index: usize, content: &str) -> Result<(
     Ok(())
 }
 
-pub fn replace_line_with_index(
-    doc: &mut Document,
-    index: &mut ShortHashIndex,
-    line_index: usize,
-    content: &str,
-) -> Result<(), LinehashError> {
-    validate_single_line_content(content)?;
-    ensure_index(doc, line_index)?;
-
-    let old_short_hash = doc.lines[line_index].short_hash;
-    doc.lines[line_index].content = content.to_owned();
-    refresh_line_metadata(&mut doc.lines[line_index]);
-    let new_short_hash = doc.lines[line_index].short_hash;
-
-    if old_short_hash != new_short_hash {
-        remove_index_position(index, old_short_hash, line_index);
-        insert_index_position(index, new_short_hash, line_index);
-    }
-
-    Ok(())
-}
-
 pub fn replace_range_with_line(
     doc: &mut Document,
     start: usize,
@@ -60,29 +35,6 @@ pub fn replace_range_with_line(
     Ok(())
 }
 
-pub fn replace_range_with_line_with_index(
-    doc: &mut Document,
-    index: &mut ShortHashIndex,
-    start: usize,
-    end: usize,
-    content: &str,
-) -> Result<(), LinehashError> {
-    validate_single_line_content(content)?;
-    ensure_range(doc, start, end)?;
-
-    for line_index in start..=end {
-        let short_hash = doc.lines[line_index].short_hash;
-        remove_index_position(index, short_hash, line_index);
-    }
-
-    let removed_count = end - start + 1;
-    doc.lines.splice(start..=end, [new_line_record(content)]);
-    shift_index_positions(index, end + 1, -(removed_count as isize));
-    shift_index_positions(index, start, 1);
-    insert_index_position(index, doc.lines[start].short_hash, start);
-    Ok(())
-}
-
 pub fn insert_line(doc: &mut Document, index: usize, content: &str) -> Result<(), LinehashError> {
     validate_single_line_content(content)?;
     ensure_insert_index(doc, index)?;
@@ -92,39 +44,10 @@ pub fn insert_line(doc: &mut Document, index: usize, content: &str) -> Result<()
     Ok(())
 }
 
-pub fn insert_line_with_index(
-    doc: &mut Document,
-    index: &mut ShortHashIndex,
-    line_index: usize,
-    content: &str,
-) -> Result<(), LinehashError> {
-    validate_single_line_content(content)?;
-    ensure_insert_index(doc, line_index)?;
-
-    shift_index_positions(index, line_index, 1);
-    doc.lines.insert(line_index, new_line_record(content));
-    insert_index_position(index, doc.lines[line_index].short_hash, line_index);
-    Ok(())
-}
-
 pub fn delete_line(doc: &mut Document, index: usize) -> Result<(), LinehashError> {
     ensure_index(doc, index)?;
 
     doc.lines.remove(index);
-    Ok(())
-}
-
-pub fn delete_line_with_index(
-    doc: &mut Document,
-    index: &mut ShortHashIndex,
-    line_index: usize,
-) -> Result<(), LinehashError> {
-    ensure_index(doc, line_index)?;
-
-    let short_hash = doc.lines[line_index].short_hash;
-    remove_index_position(index, short_hash, line_index);
-    doc.lines.remove(line_index);
-    shift_index_positions(index, line_index, -1);
     Ok(())
 }
 
@@ -140,30 +63,6 @@ pub fn swap_lines(doc: &mut Document, left: usize, right: usize) -> Result<(), L
     }
 
     doc.lines.swap(left, right);
-    Ok(())
-}
-
-pub fn swap_lines_with_index(
-    doc: &mut Document,
-    index: &mut ShortHashIndex,
-    left: usize,
-    right: usize,
-) -> Result<(), LinehashError> {
-    ensure_index(doc, left)?;
-    ensure_index(doc, right)?;
-
-    if left == right {
-        return Err(LinehashError::PatchFailed {
-            op_index: 0,
-            reason: "source and target must resolve to different lines".to_owned(),
-        });
-    }
-
-    let left_short_hash = doc.lines[left].short_hash;
-    let right_short_hash = doc.lines[right].short_hash;
-    doc.lines.swap(left, right);
-    replace_index_position(index, left_short_hash, left, right);
-    replace_index_position(index, right_short_hash, right, left);
     Ok(())
 }
 
@@ -192,39 +91,6 @@ pub fn move_line(
     };
 
     doc.lines.insert(insert_at, line);
-    Ok(insert_at)
-}
-
-pub fn move_line_with_index(
-    doc: &mut Document,
-    index: &mut ShortHashIndex,
-    source: usize,
-    target: usize,
-    place_before: bool,
-) -> Result<usize, LinehashError> {
-    ensure_index(doc, source)?;
-    ensure_index(doc, target)?;
-
-    if source == target {
-        return Err(LinehashError::PatchFailed {
-            op_index: 0,
-            reason: "source and target must resolve to different lines".to_owned(),
-        });
-    }
-
-    let short_hash = doc.lines[source].short_hash;
-    remove_index_position(index, short_hash, source);
-    let line = doc.lines.remove(source);
-    shift_index_positions(index, source, -1);
-    let adjusted_target = if source < target { target - 1 } else { target };
-    let insert_at = if place_before {
-        adjusted_target
-    } else {
-        adjusted_target + 1
-    };
-    shift_index_positions(index, insert_at, 1);
-    doc.lines.insert(insert_at, line);
-    insert_index_position(index, short_hash, insert_at);
     Ok(insert_at)
 }
 
@@ -279,9 +145,7 @@ fn ensure_range(doc: &Document, start: usize, end: usize) -> Result<(), Linehash
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_line, delete_line_with_index, insert_line, insert_line_with_index, move_line,
-        move_line_with_index, replace_line, replace_line_with_index, replace_range_with_line,
-        replace_range_with_line_with_index, swap_lines, swap_lines_with_index,
+        delete_line, insert_line, move_line, replace_line, replace_range_with_line, swap_lines,
         validate_single_line_content,
     };
     use crate::document::{Document, NewlineStyle};
@@ -480,69 +344,6 @@ mod tests {
                 len: 2
             }
         ));
-    }
-
-    #[test]
-    fn replace_line_with_index_matches_rebuilt_index() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
-        let mut index = doc.build_index();
-
-        replace_line_with_index(&mut doc, &mut index, 1, "delta").unwrap();
-
-        assert_eq!(index, doc.build_index());
-    }
-
-    #[test]
-    fn replace_range_with_index_matches_rebuilt_index() {
-        let mut doc =
-            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
-        let mut index = doc.build_index();
-
-        replace_range_with_line_with_index(&mut doc, &mut index, 1, 2, "merged").unwrap();
-
-        assert_eq!(index, doc.build_index());
-    }
-
-    #[test]
-    fn insert_line_with_index_matches_rebuilt_index() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\ngamma\n").unwrap();
-        let mut index = doc.build_index();
-
-        insert_line_with_index(&mut doc, &mut index, 1, "beta").unwrap();
-
-        assert_eq!(index, doc.build_index());
-    }
-
-    #[test]
-    fn delete_line_with_index_matches_rebuilt_index() {
-        let mut doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
-        let mut index = doc.build_index();
-
-        delete_line_with_index(&mut doc, &mut index, 1).unwrap();
-
-        assert_eq!(index, doc.build_index());
-    }
-
-    #[test]
-    fn swap_lines_with_index_matches_rebuilt_index() {
-        let mut doc =
-            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
-        let mut index = doc.build_index();
-
-        swap_lines_with_index(&mut doc, &mut index, 1, 3).unwrap();
-
-        assert_eq!(index, doc.build_index());
-    }
-
-    #[test]
-    fn move_line_with_index_matches_rebuilt_index() {
-        let mut doc =
-            Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
-        let mut index = doc.build_index();
-
-        move_line_with_index(&mut doc, &mut index, 1, 3, false).unwrap();
-
-        assert_eq!(index, doc.build_index());
     }
 
     #[test]

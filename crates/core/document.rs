@@ -10,7 +10,6 @@ use crate::error::LinehashError;
 use crate::hash::{self, ShortHash};
 
 pub type ShortHashIndex = Vec<Vec<usize>>;
-const SHORT_HASH_BUCKETS: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NewlineStyle {
@@ -177,47 +176,6 @@ pub fn format_short_hash(short_hash: ShortHash) -> String {
     hash::format_short_hash(short_hash)
 }
 
-pub fn insert_index_position(index: &mut ShortHashIndex, short_hash: ShortHash, line_index: usize) {
-    let bucket = &mut index[short_hash as usize];
-    let insert_at = bucket.partition_point(|existing| *existing < line_index);
-    bucket.insert(insert_at, line_index);
-}
-
-pub fn remove_index_position(index: &mut ShortHashIndex, short_hash: ShortHash, line_index: usize) {
-    let bucket = &mut index[short_hash as usize];
-    if let Some(position) = bucket.iter().position(|existing| *existing == line_index) {
-        bucket.remove(position);
-    }
-}
-
-pub fn replace_index_position(
-    index: &mut ShortHashIndex,
-    short_hash: ShortHash,
-    old_line_index: usize,
-    new_line_index: usize,
-) {
-    let bucket = &mut index[short_hash as usize];
-    if let Some(position) = bucket.iter().position(|existing| *existing == old_line_index) {
-        bucket.remove(position);
-    }
-    let insert_at = bucket.partition_point(|existing| *existing < new_line_index);
-    bucket.insert(insert_at, new_line_index);
-}
-
-pub fn shift_index_positions(index: &mut ShortHashIndex, start: usize, delta: isize) {
-    if delta == 0 {
-        return;
-    }
-
-    for bucket in index.iter_mut() {
-        for position in bucket.iter_mut() {
-            if *position >= start {
-                *position = position.checked_add_signed(delta).expect("index shift stays in range");
-            }
-        }
-    }
-}
-
 fn build_lines(content: &str, newline: NewlineStyle) -> Vec<LineRecord> {
     if content.is_empty() {
         return Vec::new();
@@ -304,18 +262,18 @@ fn detect_newline_style(content: &str, path: &Path) -> Result<NewlineStyle, Line
 }
 
 fn empty_index() -> ShortHashIndex {
-    vec![Vec::new(); SHORT_HASH_BUCKETS]
+    vec![Vec::new(); 256]
 }
 
-fn count_short_hashes(lines: &[LineRecord]) -> [usize; SHORT_HASH_BUCKETS] {
-    let mut counts = [0; SHORT_HASH_BUCKETS];
+fn count_short_hashes(lines: &[LineRecord]) -> [usize; 256] {
+    let mut counts = [0; 256];
     for line in lines {
         counts[line.short_hash as usize] += 1;
     }
     counts
 }
 
-fn build_index_from_counts(lines: &[LineRecord], counts: &[usize; SHORT_HASH_BUCKETS]) -> ShortHashIndex {
+fn build_index_from_counts(lines: &[LineRecord], counts: &[usize; 256]) -> ShortHashIndex {
     let mut index = empty_index();
     for (bucket, count) in counts.iter().enumerate() {
         if *count > 0 {
@@ -330,7 +288,7 @@ fn build_index_from_counts(lines: &[LineRecord], counts: &[usize; SHORT_HASH_BUC
     index
 }
 
-fn summarize_bucket_counts(counts: &[usize; SHORT_HASH_BUCKETS]) -> (usize, usize) {
+fn summarize_bucket_counts(counts: &[usize; 256]) -> (usize, usize) {
     let mut unique_hashes = 0;
     let mut collision_count = 0;
 
@@ -434,11 +392,7 @@ fn inode_from_metadata(_metadata: &fs::Metadata) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Document, FileStats, NewlineStyle, SHORT_HASH_BUCKETS, format_short_hash,
-        insert_index_position, remove_index_position, replace_index_position,
-        shift_index_positions,
-    };
+    use super::{Document, FileStats, NewlineStyle, format_short_hash};
     use crate::error::LinehashError;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -611,54 +565,6 @@ mod tests {
         let index = doc.build_index();
         let short = doc.lines[0].short_hash as usize;
         assert_eq!(index[short], vec![0, 1]);
-    }
-
-    #[test]
-    fn test_insert_index_position_keeps_bucket_sorted() {
-        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
-        let mut index = vec![Vec::new(); SHORT_HASH_BUCKETS];
-
-        insert_index_position(&mut index, doc.lines[2].short_hash, 2);
-        insert_index_position(&mut index, doc.lines[0].short_hash, 0);
-        insert_index_position(&mut index, doc.lines[1].short_hash, 1);
-
-        let expected = doc.build_index();
-        assert_eq!(index, expected);
-    }
-
-    #[test]
-    fn test_remove_index_position_removes_matching_entry() {
-        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
-        let mut index = doc.build_index();
-        let beta_hash = doc.lines[1].short_hash;
-
-        remove_index_position(&mut index, beta_hash, 1);
-
-        assert!(!index[beta_hash as usize].contains(&1));
-    }
-
-    #[test]
-    fn test_replace_index_position_reorders_bucket_entry() {
-        let (first, second) = find_collision_pair();
-        let doc = Document::from_str(Path::new("demo.txt"), &format!("{first}\n{second}\n")).unwrap();
-        let mut index = doc.build_index();
-        let short_hash = doc.lines[0].short_hash;
-
-        replace_index_position(&mut index, short_hash, 0, 3);
-
-        assert_eq!(index[short_hash as usize], vec![1, 3]);
-    }
-
-    #[test]
-    fn test_shift_index_positions_updates_entries_at_and_after_boundary() {
-        let doc = Document::from_str(Path::new("demo.txt"), "alpha\nbeta\ngamma\n").unwrap();
-        let mut index = doc.build_index();
-
-        shift_index_positions(&mut index, 1, 2);
-
-        assert_eq!(index[doc.lines[0].short_hash as usize], vec![0]);
-        assert_eq!(index[doc.lines[1].short_hash as usize], vec![3]);
-        assert_eq!(index[doc.lines[2].short_hash as usize], vec![4]);
     }
 
     #[test]

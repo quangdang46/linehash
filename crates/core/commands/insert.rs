@@ -6,7 +6,7 @@ use crate::commands::common::{atomic_write, check_guard};
 use crate::context::{CommandContext, OutputMode};
 use crate::document::Document;
 use crate::error::LinehashError;
-use crate::mutation::insert_line_with_index;
+use crate::mutation::insert_line;
 use crate::output;
 use crate::receipt::{self, ChangeKind, LineChange};
 
@@ -18,7 +18,7 @@ pub fn run<W: Write, E: Write>(
     check_guard(&doc, cmd.expect_mtime, cmd.expect_inode)?;
     let needs_receipt = cmd.receipt || cmd.audit_log.is_some();
     let before_bytes = needs_receipt.then(|| doc.render());
-    let mut index = doc.build_index();
+    let index = doc.build_index();
     let anchor = parse_anchor(&cmd.anchor)?;
     let resolved = resolve(&anchor, &doc, &index)?;
     let insert_at = if cmd.before {
@@ -26,7 +26,7 @@ pub fn run<W: Write, E: Write>(
     } else {
         resolved.index + 1
     };
-    insert_line_with_index(&mut doc, &mut index, insert_at, &cmd.content)?;
+    insert_line(&mut doc, insert_at, &cmd.content)?;
 
     let summary = InsertSummary {
         anchor_line: resolved.line_no,

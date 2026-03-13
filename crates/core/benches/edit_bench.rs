@@ -19,7 +19,7 @@ mod support;
 use anchor::{parse_anchor, resolve};
 use document::Document;
 use error::LinehashError;
-use mutation::{replace_line, replace_line_with_index};
+use mutation::replace_line;
 use support::{
     EditScenario, generate_duplicate_target_edit_scenario, generate_exact_match_edit_scenario,
     generate_line_shift_edit_scenario, generate_long_line_exact_match_edit_scenario,
@@ -70,16 +70,6 @@ fn linehash_mutate_render_with_receipt_once(scenario: &EditScenario) -> (usize, 
     replace_line(&mut doc, target_index, &scenario.replacement_line).expect("replace target line");
     let after = String::from_utf8(doc.render()).expect("render benchmark document");
     (before_len, after)
-}
-
-fn linehash_mutate_render_with_incremental_index_once(scenario: &EditScenario) -> String {
-    let mut doc = Document::from_str(Path::new("bench.rs"), &scenario.drifted_content)
-        .expect("build benchmark document");
-    let mut index = doc.build_index();
-    let target_index = scenario.target_line_number - 1;
-    replace_line_with_index(&mut doc, &mut index, target_index, &scenario.replacement_line)
-        .expect("replace target line");
-    String::from_utf8(doc.render()).expect("render benchmark document")
 }
 
 fn naive_str_replace_line_once(scenario: &EditScenario) -> bool {
@@ -419,26 +409,6 @@ fn bench_edit_mutate_render_linehash_100k_single_line(c: &mut Criterion) {
     });
 }
 
-fn bench_edit_mutate_render_linehash_10k_single_line_with_incremental_index(c: &mut Criterion) {
-    let scenario = generate_exact_match_edit_scenario(10_000);
-    assert_exact_match_scenario(&scenario, 10_000);
-
-    c.bench_function(
-        "edit_mutate_render_linehash_10k_single_line_with_incremental_index",
-        |b| b.iter(|| black_box(linehash_mutate_render_with_incremental_index_once(black_box(&scenario)))),
-    );
-}
-
-fn bench_edit_mutate_render_linehash_100k_single_line_with_incremental_index(c: &mut Criterion) {
-    let scenario = generate_exact_match_edit_scenario(100_000);
-    assert_exact_match_scenario(&scenario, 100_000);
-
-    c.bench_function(
-        "edit_mutate_render_linehash_100k_single_line_with_incremental_index",
-        |b| b.iter(|| black_box(linehash_mutate_render_with_incremental_index_once(black_box(&scenario)))),
-    );
-}
-
 fn bench_edit_mutate_render_linehash_10k_single_line_with_receipt(c: &mut Criterion) {
     let scenario = generate_exact_match_edit_scenario(10_000);
     assert_exact_match_scenario(&scenario, 10_000);
@@ -504,8 +474,6 @@ criterion_group!(
     bench_edit_parse_document_100k_exact_match,
     bench_edit_mutate_render_linehash_10k_single_line,
     bench_edit_mutate_render_linehash_100k_single_line,
-    bench_edit_mutate_render_linehash_10k_single_line_with_incremental_index,
-    bench_edit_mutate_render_linehash_100k_single_line_with_incremental_index,
     bench_edit_mutate_render_linehash_10k_single_line_with_receipt,
     bench_edit_mutate_render_linehash_100k_single_line_with_receipt,
     bench_edit_replace_naive_line_10k_exact_match
